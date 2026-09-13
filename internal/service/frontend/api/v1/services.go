@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dagucloud/dagu/v2/api/v1"
 	"github.com/dagucloud/dagu/v2/internal/audit"
@@ -21,6 +22,11 @@ import (
 // schedulerPauseUnavailable is returned when no pause store is configured, which
 // means the deployment cannot record or observe a scheduler pause.
 const schedulerPauseUnavailable = "Scheduler pause state not configured"
+
+// maxSchedulerPauseReasonLength bounds the pause reason. It is rendered in a
+// banner that every client polls, so it is checked here rather than relying on
+// the OpenAPI bound, which only applies when strict validation is enabled.
+const maxSchedulerPauseReasonLength = 512
 
 // GetSchedulerPauseState returns the cluster-wide scheduler pause state.
 //
@@ -72,6 +78,13 @@ func (a *API) UpdateSchedulerPauseState(ctx context.Context, request api.UpdateS
 	var reason string
 	if request.Body.Reason != nil {
 		reason = *request.Body.Reason
+	}
+	if utf8.RuneCountInString(reason) > maxSchedulerPauseReasonLength {
+		return nil, &Error{
+			HTTPStatus: http.StatusBadRequest,
+			Code:       api.ErrorCodeBadRequest,
+			Message:    fmt.Sprintf("reason must be at most %d characters", maxSchedulerPauseReasonLength),
+		}
 	}
 	actor := ""
 	if user, ok := auth.UserFromContext(ctx); ok && user != nil {

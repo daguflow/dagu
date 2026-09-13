@@ -4211,6 +4211,7 @@ paths:
                   description: "Pause state to set for the scheduler"
                 reason:
                   type: string
+                  maxLength: 512
                   description: "Operator-facing explanation shown while paused"
               required:
                 - paused

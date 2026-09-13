@@ -5,6 +5,7 @@ package api_test
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/dagucloud/dagu/v2/api/v1"
@@ -107,6 +108,30 @@ func TestSchedulerPause_MutationRequiresAdminButReadDoesNot(t *testing.T) {
 		state := schedulerPauseState(t, server, login.Token)
 		assert.False(t, state.Paused, "%s must not have been able to pause", u.role)
 	}
+}
+
+// The reason is rendered in an app-wide banner, so the schema bounds it and the
+// request validator rejects anything longer.
+func TestSchedulerPause_RejectsOversizedReason(t *testing.T) {
+	t.Parallel()
+	server := setupSchedulerPauseServer(t)
+	adminToken := getWebhookAdminToken(t, server)
+
+	// Multi-byte input confirms the bound counts characters, matching the
+	// maxLength the schema documents, rather than bytes.
+	oversized := strings.Repeat("\u3042", 513)
+	server.Client().Post("/api/v1/services/scheduler/pause", api.UpdateSchedulerPauseStateJSONRequestBody{
+		Paused: true,
+		Reason: &oversized,
+	}).WithBearerToken(adminToken).ExpectStatus(http.StatusBadRequest).Send(t)
+
+	assert.False(t, schedulerPauseState(t, server, adminToken).Paused)
+
+	atLimit := strings.Repeat("\u3042", 512)
+	server.Client().Post("/api/v1/services/scheduler/pause", api.UpdateSchedulerPauseStateJSONRequestBody{
+		Paused: true,
+		Reason: &atLimit,
+	}).WithBearerToken(adminToken).ExpectStatus(http.StatusOK).Send(t)
 }
 
 func TestSchedulerPause_ReadRequiresAuthentication(t *testing.T) {
