@@ -12767,6 +12767,31 @@ components:
         - message
         - checkedAt
 
+    DAGRunProcess:
+      type: object
+      description: >-
+        Operating system process executing a DAG-run on the host that served this response.
+        Present only while the DAG-run is running on that host; absent for queued, waiting and
+        finished DAG-runs, and for DAG-runs executed by a remote worker, because in those cases
+        there is no local process to look at. The process may have exited since the status was
+        recorded, so treat pid as valid only when the live process with that pid reports
+        startedAtMs as its creation time.
+      properties:
+        pid:
+          type: integer
+          description: "Process ID of the process executing the DAG-run"
+        startedAtMs:
+          type: integer
+          format: "int64"
+          description: >-
+            Creation time of that process as a Unix timestamp in milliseconds, as reported by the
+            host operating system. Compare it against the creation time of the live process with
+            this pid before attributing anything to the DAG-run; operating systems reuse pids, and
+            a pid alone cannot identify a process.
+      required:
+        - pid
+        - startedAtMs
+
     DAGRunSummary:
       type: object
       description: "Current status of a DAG-run"
@@ -12816,6 +12841,8 @@ components:
         workerId:
           type: string
           description: "ID of the worker that executed this DAG-run ('local' for local execution)"
+        process:
+          $ref: "#/components/schemas/DAGRunProcess"
         triggerType:
           $ref: "#/components/schemas/TriggerType"
         triggerActor:
