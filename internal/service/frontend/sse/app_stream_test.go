@@ -157,6 +157,36 @@ func TestHandleWikiPageEventSkipsAttachmentPaths(t *testing.T) {
 	}
 }
 
+// The pause flag and the watermark share a directory, and both have to invalidate
+// DAG listings so next-run columns stay truthful.
+func TestHandleSchedulerStateEventCoversWatermarkAndPause(t *testing.T) {
+	newService := func(t *testing.T) *AppStreamService {
+		t.Helper()
+		coalescer := newAppEventCoalescer(time.Hour, func(AppEvent) {})
+		t.Cleanup(func() {
+			coalescer.mu.Lock()
+			defer coalescer.mu.Unlock()
+			if coalescer.timer != nil {
+				coalescer.timer.Stop()
+			}
+		})
+		return &AppStreamService{coalescer: coalescer}
+	}
+
+	for _, name := range []string{schedulerStateFileName, schedulerPauseFileName} {
+		service := newService(t)
+		service.handleSchedulerStateEvent("", name, fsnotify.Write)
+		require.Len(t, service.coalescer.pending, 1, "expected %s to raise an event", name)
+		for _, event := range service.coalescer.pending {
+			assert.Equal(t, AppEventTypeScheduler, event.Type)
+		}
+	}
+
+	service := newService(t)
+	service.handleSchedulerStateEvent("", "locks/some.lock", fsnotify.Write)
+	assert.Empty(t, service.coalescer.pending)
+}
+
 func TestMarkdownPollingWatcherEmitsOnlyMarkdownEvents(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "existing.md"), []byte("old\n"), 0600))
