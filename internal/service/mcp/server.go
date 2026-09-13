@@ -221,6 +221,16 @@ func registerResources(server *mcpsdk.Server, svc *Service) {
 		MIMEType:    resourceMIMEJSON,
 	}, svc.readResource)
 
+	// The SDK matches registered resources by exact URI, so query-bearing
+	// reads of the collection route through this template instead.
+	server.AddResourceTemplate(&mcpsdk.ResourceTemplate{
+		URITemplate: "dagu://runs{?name,dagRunId,status*,fromDate,toDate,limit,cursor,labels}",
+		Name:        "dag_runs_filtered",
+		Title:       "Filtered DAG-runs",
+		Description: "DAG-run summaries filtered by query parameters, as accepted by dagu_read target=runs. status may be repeated.",
+		MIMEType:    resourceMIMEJSON,
+	}, svc.readResource)
+
 	server.AddResourceTemplate(&mcpsdk.ResourceTemplate{
 		URITemplate: "dagu://runs/{name}/{dagRunId}",
 		Name:        "dag_run",

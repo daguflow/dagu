@@ -833,13 +833,19 @@ func TestRunsCollectionResource(t *testing.T) {
 	require.Contains(t, read.Contents[0].Text, `"dagRunId":"run-1"`)
 	require.Contains(t, read.Contents[0].Text, `"uri":"dagu://runs/run-dag/run-1"`)
 
-	// Collection query parameters follow the same rules as dagu_read URI mode.
-	svc := &Service{api: api}
-	filtered, _, err := svc.readResourceText(ctx, readResourceRunsCollectionURI+"?name=run-dag&limit=10")
+	// Query-bearing collection URIs route through the resource template and
+	// follow the same query rules as dagu_read URI mode.
+	filtered, err := session.ReadResource(ctx, &mcpsdk.ReadResourceParams{
+		URI: readResourceRunsCollectionURI + "?name=run-dag&limit=10",
+	})
 	require.NoError(t, err)
-	require.Contains(t, filtered, `"dagRunId":"run-1"`)
+	require.Len(t, filtered.Contents, 1)
+	require.Equal(t, resourceMIMEJSON, filtered.Contents[0].MIMEType)
+	require.Contains(t, filtered.Contents[0].Text, `"dagRunId":"run-1"`)
 
-	_, _, err = svc.readResourceText(ctx, readResourceRunsCollectionURI+"?bogus=1")
+	_, err = session.ReadResource(ctx, &mcpsdk.ReadResourceParams{
+		URI: readResourceRunsCollectionURI + "?bogus=1",
+	})
 	require.Error(t, err)
 }
 
