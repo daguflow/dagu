@@ -163,6 +163,14 @@ func registerResources(server *mcpsdk.Server, svc *Service) {
 		MIMEType:    mcpAppMIMEType,
 	}, svc.readResource)
 
+	server.AddResource(&mcpsdk.Resource{
+		URI:         readResourceReferenceCollectionURI,
+		Name:        "dagu_references",
+		Title:       "Dagu references",
+		Description: "Available built-in MCP reference resources.",
+		MIMEType:    resourceMIMEJSON,
+	}, svc.readResource)
+
 	for _, ref := range referenceResources() {
 		server.AddResource(&mcpsdk.Resource{
 			URI:         ref.uri,
@@ -203,6 +211,14 @@ func registerResources(server *mcpsdk.Server, svc *Service) {
 		Title:       "Wiki page",
 		Description: "Current Markdown content for a Wiki page in default or one named workspace. Nested paths are encoded as one URI segment.",
 		MIMEType:    resourceMIMEText,
+	}, svc.readResource)
+
+	server.AddResource(&mcpsdk.Resource{
+		URI:         readResourceRunsCollectionURI,
+		Name:        "dag_runs",
+		Title:       "DAG-runs",
+		Description: "DAG-run summaries visible to the caller.",
+		MIMEType:    resourceMIMEJSON,
 	}, svc.readResource)
 
 	server.AddResourceTemplate(&mcpsdk.ResourceTemplate{
@@ -671,6 +687,16 @@ func (svc *Service) readResourceText(ctx context.Context, rawURI string) (string
 
 	switch parsed.Host {
 	case "reference":
+		if len(segments) == 0 {
+			if parsed.RawQuery != "" {
+				return "", "", mcpsdk.ResourceNotFoundError(rawURI)
+			}
+			text, err := jsonText(readReferenceCollection())
+			if err != nil {
+				return "", "", err
+			}
+			return text, resourceMIMEJSON, nil
+		}
 		if len(segments) != 1 {
 			return "", "", mcpsdk.ResourceNotFoundError(rawURI)
 		}
@@ -717,6 +743,27 @@ func (svc *Service) readResourceText(ctx context.Context, rawURI string) (string
 		}
 		return text, resourceMIMEJSON, nil
 	case "runs":
+		if len(segments) == 0 {
+			if readErr := validateReadQuery(readTargetRuns, parsed.RawQuery, true, rawURI); readErr != nil {
+				return "", "", mcpsdk.ResourceNotFoundError(rawURI)
+			}
+			if err := svc.requireAPI(); err != nil {
+				return "", "", err
+			}
+			raw, err := svc.api.GetDAGRunsListData(ctx, parsed.RawQuery)
+			if err != nil {
+				return "", "", err
+			}
+			data, err := normalizeRunList(raw)
+			if err != nil {
+				return "", "", err
+			}
+			text, err := jsonText(data)
+			if err != nil {
+				return "", "", err
+			}
+			return text, resourceMIMEJSON, nil
+		}
 		if !isRunResourceSegments(segments) && !isStepLogResourceSegments(segments) &&
 			!isSubRunResourceSegments(segments) && !isSubStepLogResourceSegments(segments) {
 			return "", "", mcpsdk.ResourceNotFoundError(rawURI)

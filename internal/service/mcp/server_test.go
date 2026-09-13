@@ -777,6 +777,72 @@ func TestReadToolListsAndReadsAltDAGsDir(t *testing.T) {
 	require.Contains(t, structuredJSON(t, spec), "name: alt-dag")
 }
 
+func TestReferenceCollectionResource(t *testing.T) {
+	ctx := context.Background()
+	session := connectTestClient(t, ctx, NewServer(nil))
+
+	resources, err := session.ListResources(ctx, nil)
+	require.NoError(t, err)
+	collection := findResource(t, resources.Resources, readResourceReferenceCollectionURI)
+	require.Equal(t, resourceMIMEJSON, collection.MIMEType)
+
+	read, err := session.ReadResource(ctx, &mcpsdk.ReadResourceParams{URI: readResourceReferenceCollectionURI})
+	require.NoError(t, err)
+	require.Len(t, read.Contents, 1)
+	require.Equal(t, readResourceReferenceCollectionURI, read.Contents[0].URI)
+	require.Equal(t, resourceMIMEJSON, read.Contents[0].MIMEType)
+	require.Contains(t, read.Contents[0].Text, `"uri":"dagu://reference/authoring"`)
+	require.Contains(t, read.Contents[0].Text, `"uri":"dagu://reference/read-tool"`)
+
+	// Reference resources accept no query parameters.
+	svc := &Service{}
+	_, _, err = svc.readResourceText(ctx, readResourceReferenceCollectionURI+"?unknown=1")
+	require.Error(t, err)
+}
+
+func TestRunsCollectionResource(t *testing.T) {
+	ctx := context.Background()
+	dagStore := testutil.NewFileDAGRepository(t.TempDir(), filedag.WithSkipExamples(true))
+	require.NoError(t, dagStore.Create(ctx, "run-dag", []byte("name: run-dag\nsteps: []\n")))
+
+	runRepo := testutil.NewFileDAGRunRepository(filepath.Join(t.TempDir(), "dag-runs"), persis.DAGRunRepositoryOptions{})
+	dag := &ir.DAG{Name: "run-dag"}
+	attempt, err := runRepo.CreateAttempt(ctx, dag, time.Now(), "run-1", persis.DAGRunCreateAttemptOptions{})
+	require.NoError(t, err)
+	require.NoError(t, attempt.Open(ctx))
+	status := ir.InitialStatus(dag)
+	status.DAGRunID = "run-1"
+	status.Status = ir.Succeeded
+	require.NoError(t, attempt.Write(ctx, status))
+	require.NoError(t, attempt.Close(ctx))
+
+	api := frontendapi.New(dagStore, runRepo, nil, nil, runtime.Manager{}, &config.Config{}, nil, nil, prometheus.NewRegistry(), nil)
+	session := connectTestClient(t, ctx, NewServer(api))
+
+	resources, err := session.ListResources(ctx, nil)
+	require.NoError(t, err)
+	collection := findResource(t, resources.Resources, readResourceRunsCollectionURI)
+	require.Equal(t, resourceMIMEJSON, collection.MIMEType)
+
+	read, err := session.ReadResource(ctx, &mcpsdk.ReadResourceParams{URI: readResourceRunsCollectionURI})
+	require.NoError(t, err)
+	require.Len(t, read.Contents, 1)
+	require.Equal(t, readResourceRunsCollectionURI, read.Contents[0].URI)
+	require.Equal(t, resourceMIMEJSON, read.Contents[0].MIMEType)
+	require.Contains(t, read.Contents[0].Text, `"name":"run-dag"`)
+	require.Contains(t, read.Contents[0].Text, `"dagRunId":"run-1"`)
+	require.Contains(t, read.Contents[0].Text, `"uri":"dagu://runs/run-dag/run-1"`)
+
+	// Collection query parameters follow the same rules as dagu_read URI mode.
+	svc := &Service{api: api}
+	filtered, _, err := svc.readResourceText(ctx, readResourceRunsCollectionURI+"?name=run-dag&limit=10")
+	require.NoError(t, err)
+	require.Contains(t, filtered, `"dagRunId":"run-1"`)
+
+	_, _, err = svc.readResourceText(ctx, readResourceRunsCollectionURI+"?bogus=1")
+	require.Error(t, err)
+}
+
 func TestReadToolCanReadReferenceResource(t *testing.T) {
 	ctx := context.Background()
 	session := connectTestClient(t, ctx, NewServer(nil))
