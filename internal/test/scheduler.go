@@ -15,6 +15,7 @@ import (
 	"github.com/dagucloud/dagu/v2/internal/persis/store"
 	"github.com/dagucloud/dagu/v2/internal/queue"
 	"github.com/dagucloud/dagu/v2/internal/runtime"
+	"github.com/dagucloud/dagu/v2/internal/schedulerstate"
 	"github.com/dagucloud/dagu/v2/internal/service/coordinator"
 	"github.com/dagucloud/dagu/v2/internal/service/scheduler"
 	"github.com/stretchr/testify/require"
@@ -26,6 +27,9 @@ type Scheduler struct {
 	EntryReader    scheduler.EntryReader
 	QueueStore     queue.QueueStore
 	CoordinatorCli dispatch.Dispatcher
+	// PauseStore backs the cluster-wide scheduler pause flag. Tests write to it
+	// the way the API process would.
+	PauseStore schedulerstate.PauseStore
 }
 
 // SetupScheduler creates a test scheduler instance with all dependencies
@@ -65,6 +69,7 @@ func SetupScheduler(t *testing.T, opts ...HelperOption) *Scheduler {
 	dagRunRepository := file.NewDAGRunRepository(helper.Config)
 	ps := newProcRepository(helper.Config)
 	qs := store.NewQueueStore(helper.Backend.Collection(persis.CollectionQueue))
+	pauseStore := store.NewSchedulerPauseStore(helper.Backend.Collection(persis.CollectionSchedulerState))
 
 	// Create DAG run manager
 	drm := runtime.NewManager(dagRunRepository, ps, helper.Config)
@@ -88,6 +93,7 @@ func SetupScheduler(t *testing.T, opts ...HelperOption) *Scheduler {
 		EntryReader:    em,
 		QueueStore:     qs,
 		CoordinatorCli: coordinatorCli,
+		PauseStore:     pauseStore,
 	}
 
 	return sch
@@ -98,14 +104,15 @@ func (s *Scheduler) NewSchedulerInstance(t *testing.T) (*scheduler.Scheduler, er
 	t.Helper()
 
 	return scheduler.New(s.Config, scheduler.Dependencies{
-		EntryReader:       s.EntryReader,
-		DAGRunManager:     s.DAGRunMgr,
-		DAGRepository:     s.DAGRepository,
-		DAGRunRepository:  s.DAGRunRepository,
-		QueueStore:        s.QueueStore,
-		ProcRepository:    s.ProcRepository,
-		ServiceRegistry:   s.ServiceRegistry,
-		CoordinatorClient: s.CoordinatorCli,
+		EntryReader:         s.EntryReader,
+		DAGRunManager:       s.DAGRunMgr,
+		DAGRepository:       s.DAGRepository,
+		DAGRunRepository:    s.DAGRunRepository,
+		QueueStore:          s.QueueStore,
+		ProcRepository:      s.ProcRepository,
+		ServiceRegistry:     s.ServiceRegistry,
+		CoordinatorClient:   s.CoordinatorCli,
+		SchedulerPauseStore: s.PauseStore,
 	})
 }
 

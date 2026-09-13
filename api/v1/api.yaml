@@ -4166,6 +4166,64 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /services/scheduler/pause:
+    get:
+      summary: "Get scheduler pause state"
+      description: "Returns whether scheduler-driven run creation is currently paused, and who paused it. Readable by any authenticated user so the reason a schedule stopped is visible to everyone."
+      operationId: "getSchedulerPauseState"
+      tags:
+        - "system"
+      parameters:
+        - $ref: "#/components/parameters/RemoteNode"
+      responses:
+        "200":
+          description: "A successful response"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SchedulerPauseState"
+        default:
+          description: "Generic error response"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: "Pause or resume the scheduler"
+      description: |
+        Pauses or resumes scheduler-driven run creation for every DAG at once. Admin only.
+
+        Pausing has the same effect as suspending every DAG by hand. Manual, webhook, and sub-DAG runs keep working. Queued scheduler-managed runs are aborted and dequeued, catch-up windows are discarded rather than deferred, and nothing replays on resume. One-off schedules stay pending and fire late once the scheduler resumes.
+      operationId: "updateSchedulerPauseState"
+      tags:
+        - "system"
+      parameters:
+        - $ref: "#/components/parameters/RemoteNode"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                paused:
+                  type: boolean
+                  description: "Pause state to set for the scheduler"
+                reason:
+                  type: string
+                  description: "Operator-facing explanation shown while paused"
+              required:
+                - paused
+      responses:
+        "200":
+          description: "A successful response"
+        default:
+          description: "Generic error response"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /services/coordinator:
     get:
       summary: "Get coordinator service status"
@@ -12317,6 +12375,25 @@ components:
         - host
         - status
         - startedAt
+
+    SchedulerPauseState:
+      type: object
+      description: "Cluster-wide scheduler pause state"
+      properties:
+        paused:
+          type: boolean
+          description: "Whether scheduler-driven run creation is currently paused"
+        pausedAt:
+          type: string
+          description: "RFC3339 timestamp when the scheduler was paused"
+        pausedBy:
+          type: string
+          description: "User who paused the scheduler"
+        reason:
+          type: string
+          description: "Operator-facing explanation shown while paused"
+      required:
+        - paused
 
     CoordinatorStatusResponse:
       type: object

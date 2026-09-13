@@ -1677,6 +1677,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/services/scheduler/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get scheduler pause state
+         * @description Returns whether scheduler-driven run creation is currently paused, and who paused it. Readable by any authenticated user so the reason a schedule stopped is visible to everyone.
+         */
+        get: operations["getSchedulerPauseState"];
+        put?: never;
+        /**
+         * Pause or resume the scheduler
+         * @description Pauses or resumes scheduler-driven run creation for every DAG at once. Admin only.
+         *
+         *     Pausing has the same effect as suspending every DAG by hand. Manual, webhook, and sub-DAG runs keep working. Queued scheduler-managed runs are aborted and dequeued, catch-up windows are discarded rather than deferred, and nothing replays on resume. One-off schedules stay pending and fire late once the scheduler resumes.
+         *
+         */
+        post: operations["updateSchedulerPauseState"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/services/coordinator": {
         parameters: {
             query?: never;
@@ -4731,6 +4758,17 @@ export interface components {
             status: SchedulerInstanceStatus;
             /** @description RFC3339 timestamp when scheduler started */
             startedAt: string;
+        };
+        /** @description Cluster-wide scheduler pause state */
+        SchedulerPauseState: {
+            /** @description Whether scheduler-driven run creation is currently paused */
+            paused: boolean;
+            /** @description RFC3339 timestamp when the scheduler was paused */
+            pausedAt?: string;
+            /** @description User who paused the scheduler */
+            pausedBy?: string;
+            /** @description Operator-facing explanation shown while paused */
+            reason?: string;
         };
         /** @description Response containing status of all coordinator instances */
         CoordinatorStatusResponse: {
@@ -11825,6 +11863,77 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SchedulerStatusResponse"];
                 };
+            };
+            /** @description Generic error response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getSchedulerPauseState: {
+        parameters: {
+            query?: {
+                /** @description name of the remote node */
+                remoteNode?: components["parameters"]["RemoteNode"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SchedulerPauseState"];
+                };
+            };
+            /** @description Generic error response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateSchedulerPauseState: {
+        parameters: {
+            query?: {
+                /** @description name of the remote node */
+                remoteNode?: components["parameters"]["RemoteNode"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Pause state to set for the scheduler */
+                    paused: boolean;
+                    /** @description Operator-facing explanation shown while paused */
+                    reason?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description A successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Generic error response */
             default: {

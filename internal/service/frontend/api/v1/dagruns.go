@@ -882,7 +882,7 @@ func (a *API) DownloadDAGRunLog(ctx context.Context, request api.DownloadDAGRunL
 	return api.DownloadDAGRunLog200TextResponse{
 		Body: string(content),
 		Headers: api.DownloadDAGRunLog200ResponseHeaders{
-			ContentDisposition: fmt.Sprintf("attachment; filename=\"%s\"", filename),
+			ContentDisposition: ptrOf(fmt.Sprintf("attachment; filename=\"%s\"", filename)),
 		},
 	}, nil
 }
@@ -976,7 +976,7 @@ func (a *API) DownloadDAGRunArtifact(ctx context.Context, request api.DownloadDA
 	return api.DownloadDAGRunArtifact200ApplicationoctetStreamResponse{
 		Body: file,
 		Headers: api.DownloadDAGRunArtifact200ResponseHeaders{
-			ContentDisposition: fmt.Sprintf("attachment; filename=\"%s\"", sanitizeFilename(info.Name())),
+			ContentDisposition: ptrOf(fmt.Sprintf("attachment; filename=\"%s\"", sanitizeFilename(info.Name()))),
 		},
 		ContentLength: info.Size(),
 	}, nil
@@ -1138,7 +1138,7 @@ func (a *API) DownloadDAGRunStepLog(ctx context.Context, request api.DownloadDAG
 	return api.DownloadDAGRunStepLog200TextResponse{
 		Body: string(content),
 		Headers: api.DownloadDAGRunStepLog200ResponseHeaders{
-			ContentDisposition: fmt.Sprintf("attachment; filename=\"%s\"", filename),
+			ContentDisposition: ptrOf(fmt.Sprintf("attachment; filename=\"%s\"", filename)),
 		},
 	}, nil
 }
@@ -2468,7 +2468,7 @@ func (a *API) DownloadSubDAGRunLog(ctx context.Context, request api.DownloadSubD
 	return &api.DownloadSubDAGRunLog200TextResponse{
 		Body: string(content),
 		Headers: api.DownloadSubDAGRunLog200ResponseHeaders{
-			ContentDisposition: fmt.Sprintf("attachment; filename=\"%s\"", filename),
+			ContentDisposition: ptrOf(fmt.Sprintf("attachment; filename=\"%s\"", filename)),
 		},
 	}, nil
 }
@@ -2562,7 +2562,7 @@ func (a *API) DownloadSubDAGRunArtifact(ctx context.Context, request api.Downloa
 	return &api.DownloadSubDAGRunArtifact200ApplicationoctetStreamResponse{
 		Body: file,
 		Headers: api.DownloadSubDAGRunArtifact200ResponseHeaders{
-			ContentDisposition: fmt.Sprintf("attachment; filename=\"%s\"", sanitizeFilename(info.Name())),
+			ContentDisposition: ptrOf(fmt.Sprintf("attachment; filename=\"%s\"", sanitizeFilename(info.Name()))),
 		},
 		ContentLength: info.Size(),
 	}, nil
@@ -2653,7 +2653,7 @@ func (a *API) DownloadSubDAGRunStepLog(ctx context.Context, request api.Download
 	return &api.DownloadSubDAGRunStepLog200TextResponse{
 		Body: string(content),
 		Headers: api.DownloadSubDAGRunStepLog200ResponseHeaders{
-			ContentDisposition: fmt.Sprintf("attachment; filename=\"%s\"", filename),
+			ContentDisposition: ptrOf(fmt.Sprintf("attachment; filename=\"%s\"", filename)),
 		},
 	}, nil
 }

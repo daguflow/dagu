@@ -55,7 +55,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/oapi-codegen/nethttp-middleware v1.1.2
 	github.com/oapi-codegen/oapi-codegen/v2 v2.7.2
-	github.com/oapi-codegen/runtime v1.1.2
+	github.com/oapi-codegen/runtime v1.7.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/pkg/sftp v1.13.11
 	github.com/prometheus/client_golang v1.23.2

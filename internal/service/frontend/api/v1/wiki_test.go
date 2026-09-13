@@ -1171,7 +1171,8 @@ func TestWikiPageAttachments(t *testing.T) {
 		data, err := io.ReadAll(stream.Body)
 		require.NoError(t, err)
 		assert.Equal(t, "png-bytes", string(data))
-		assert.Contains(t, stream.Headers.ContentDisposition, "logo.png")
+		require.NotNil(t, stream.Headers.ContentDisposition)
+		assert.Contains(t, *stream.Headers.ContentDisposition, "logo.png")
 	})
 
 	t.Run("oversized upload is rejected", func(t *testing.T) {

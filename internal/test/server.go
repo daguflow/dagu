@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/dagucloud/dagu/v2/internal/cmn/config"
+	"github.com/dagucloud/dagu/v2/internal/persis"
+	"github.com/dagucloud/dagu/v2/internal/persis/store"
 	"github.com/dagucloud/dagu/v2/internal/service/coordinator"
 	"github.com/dagucloud/dagu/v2/internal/service/frontend"
 	"github.com/dagucloud/dagu/v2/internal/service/frontend/api/pathutil"
@@ -113,7 +115,10 @@ func (srv *Server) newFrontendServer(listener net.Listener) (*frontend.Server, e
 		ServiceRegistry:      srv.ServiceRegistry,
 		DAGRunLeaseStore:     srv.DAGRunLeaseStore,
 		WorkerHeartbeatStore: srv.WorkerHeartbeatStore,
-		Stores:               stores,
+		SchedulerPauseStore: store.NewSchedulerPauseStore(
+			srv.Backend.Collection(persis.CollectionSchedulerState),
+		),
+		Stores: stores,
 	}, serverOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create server: %w", err)

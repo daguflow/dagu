@@ -937,6 +937,8 @@ github.com/oapi-codegen/oapi-codegen/v2 v2.7.2 h1:EKgVTwbZKQHZh8+ZnU+5TLVv1kedWZ
 github.com/oapi-codegen/oapi-codegen/v2 v2.7.2/go.mod h1:qzFy6iuobJw/hD1aRILee4G87/ShmhR0xYCwcUtZMCw=
 github.com/oapi-codegen/runtime v1.1.2 h1:P2+CubHq8fO4Q6fV1tqDBZHCwpVpvPg7oKiYzQgXIyI=
 github.com/oapi-codegen/runtime v1.1.2/go.mod h1:SK9X900oXmPWilYR5/WKPzt3Kqxn/uS/+lbpREv+eCg=
+github.com/oapi-codegen/runtime v1.7.0 h1:t7358VYPvNbWJ9gdAkIK/smVeHpBf6yp8VTsaZsb/7k=
+github.com/oapi-codegen/runtime v1.7.0/go.mod h1:GwV7hC2hviaMzj+ITfHVRESK5J2W/GefVwIND/bMGvU=
 github.com/oasdiff/yaml v0.1.1 h1:6nHx+pn9gBRM6YpBlFZFQGCCd1nuvqOBtTD3KKTgGxY=
 github.com/oasdiff/yaml v0.1.1/go.mod h1:EYJNoyktvWMJ0Hmhx+6qTaqMOsalUaRGT8Sj1hNcegU=
 github.com/oasdiff/yaml3 v0.0.14 h1:aLJee3hxBK2H5wdXd9iPcIXb93Nty1Ge0pT171eHtkw=

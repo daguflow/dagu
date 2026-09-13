@@ -287,6 +287,7 @@ type ServerConfig struct {
 	DAGRunLeaseStore     dispatch.DAGRunLeaseStore
 	WorkerHeartbeatStore dispatch.WorkerHeartbeatStore
 	SchedulerStateStore  schedulerstate.Store
+	SchedulerPauseStore  schedulerstate.PauseStore
 	Caches               []fileutil.CacheMetrics
 	LicenseManager       *license.Manager
 	ResourceService      *resource.Service
@@ -327,6 +328,7 @@ func NewServer(setup ServerConfig, opts ...ServerOption) (*Server, error) {
 		opts = append(opts, WithAPIOption(apiv1.WithWorkerHeartbeatStore(setup.WorkerHeartbeatStore)))
 	}
 	opts = append(opts, WithAPIOption(apiv1.WithSchedulerStateStore(setup.SchedulerStateStore)))
+	opts = append(opts, WithAPIOption(apiv1.WithSchedulerPauseStore(setup.SchedulerPauseStore)))
 
 	remoteNodes := make([]string, 0, len(cfg.Server.RemoteNodes))
 	for _, n := range cfg.Server.RemoteNodes {
