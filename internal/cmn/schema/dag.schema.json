@@ -54,7 +54,7 @@
     "working_dir": {
       "examples": ["/var/data/etl"],
       "type": "string",
-      "description": "Working directory for the DAG. All relative paths (including dotenv files) are resolved relative to this directory. Defaults to the directory containing the DAG file."
+      "description": "Working directory for the DAG. A relative value resolves from the DAG file directory. Relative paths in the DAG (including dotenv files) resolve from this directory. When omitted, each run uses its per-run work directory (DAG_RUN_WORK_DIR) as the working directory."
     },
     "consts": {
       "type": "array",
