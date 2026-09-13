@@ -173,6 +173,14 @@ func registerResources(server *mcpsdk.Server, svc *Service) {
 		}, svc.readResource)
 	}
 
+	server.AddResource(&mcpsdk.Resource{
+		URI:         readResourceDAGsCollectionURI,
+		Name:        "dags",
+		Title:       "DAGs",
+		Description: "DAG summaries visible to the caller.",
+		MIMEType:    resourceMIMEJSON,
+	}, svc.readResource)
+
 	server.AddResourceTemplate(&mcpsdk.ResourceTemplate{
 		URITemplate: "dagu://dags/{name}/spec",
 		Name:        "dag_spec",
@@ -680,6 +688,27 @@ func (svc *Service) readResourceText(ctx context.Context, rawURI string) (string
 		}
 		return ref.text, resourceMIMEText, nil
 	case "dags":
+		if len(segments) == 0 {
+			if readErr := validateReadQuery(readTargetDAGs, parsed.RawQuery, true, rawURI); readErr != nil {
+				return "", "", mcpsdk.ResourceNotFoundError(rawURI)
+			}
+			if err := svc.requireAPI(); err != nil {
+				return "", "", err
+			}
+			raw, err := svc.api.GetDAGsListDataIncludingAltDirs(ctx, parsed.RawQuery)
+			if err != nil {
+				return "", "", err
+			}
+			data, err := normalizeDAGList(raw)
+			if err != nil {
+				return "", "", err
+			}
+			text, err := jsonText(data)
+			if err != nil {
+				return "", "", err
+			}
+			return text, resourceMIMEJSON, nil
+		}
 		if len(segments) != 2 || segments[1] != "spec" {
 			return "", "", mcpsdk.ResourceNotFoundError(rawURI)
 		}

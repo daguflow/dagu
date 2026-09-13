@@ -474,8 +474,9 @@ func resourceAuditDetails(rawURI string) map[string]any {
 		case "reference":
 			resourceType = "reference"
 		case "dags":
-			resourceType = "dag_spec"
+			resourceType = "dags"
 			if len(segments) > 0 {
+				resourceType = "dag_spec"
 				resourceID = segments[0]
 			}
 		case "runs":

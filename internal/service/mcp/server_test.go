@@ -777,6 +777,39 @@ func TestReadToolListsAndReadsAltDAGsDir(t *testing.T) {
 	require.Contains(t, structuredJSON(t, spec), "name: alt-dag")
 }
 
+func TestDAGsCollectionResource(t *testing.T) {
+	ctx := context.Background()
+	baseDir := t.TempDir()
+	altDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(altDir, "alt-dag.yaml"), []byte("name: alt-dag\nsteps: []\n"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(baseDir, "main-dag.yaml"), []byte("name: main-dag\nsteps: []\n"), 0600))
+
+	cfg := &config.Config{}
+	cfg.Paths.DAGsDir = baseDir
+	cfg.Paths.AltDAGsDir = altDir
+	cfg.Core.SkipExamples = true
+
+	repo, err := persisfile.NewDAGRepository(cfg, persisfile.WithDAGSearchPaths([]string{altDir}))
+	require.NoError(t, err)
+	api := frontendapi.New(repo, nil, nil, nil, runtime.Manager{}, cfg, nil, nil, prometheus.NewRegistry(), nil)
+	session := connectTestClient(t, ctx, NewServer(api))
+
+	resources, err := session.ListResources(ctx, nil)
+	require.NoError(t, err)
+	collection := findResource(t, resources.Resources, readResourceDAGsCollectionURI)
+	require.Equal(t, resourceMIMEJSON, collection.MIMEType)
+
+	read, err := session.ReadResource(ctx, &mcpsdk.ReadResourceParams{URI: readResourceDAGsCollectionURI})
+	require.NoError(t, err)
+	require.Len(t, read.Contents, 1)
+	require.Equal(t, readResourceDAGsCollectionURI, read.Contents[0].URI)
+	require.Equal(t, resourceMIMEJSON, read.Contents[0].MIMEType)
+	require.Contains(t, read.Contents[0].Text, `"name":"alt-dag"`)
+	require.Contains(t, read.Contents[0].Text, `"uri":"dagu://dags/alt-dag/spec"`)
+	require.Contains(t, read.Contents[0].Text, `"name":"main-dag"`)
+	require.Contains(t, read.Contents[0].Text, `"uri":"dagu://dags/main-dag/spec"`)
+}
+
 func TestReadToolCanReadReferenceResource(t *testing.T) {
 	ctx := context.Background()
 	session := connectTestClient(t, ctx, NewServer(nil))
