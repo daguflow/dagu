@@ -723,3 +723,82 @@ func TestStepOutputsOmittedWhenOnlyCaptured(t *testing.T) {
 	require.Len(t, details.Nodes, 1)
 	assert.Nil(t, details.Nodes[0].Step.Outputs)
 }
+
+func runningLocalStatus() ir.DAGRunStatus {
+	return ir.DAGRunStatus{
+		Name:         "test-dag",
+		DAGRunID:     "run-1",
+		Status:       ir.Running,
+		PID:          ir.PID(4242),
+		PIDStartedAt: 1700000000123,
+	}
+}
+
+func TestToDAGRunSummaryIncludesProcessForLocalRunningRun(t *testing.T) {
+	for _, workerID := range []string{"", "local"} {
+		status := runningLocalStatus()
+		status.WorkerID = workerID
+
+		summary := toDAGRunSummary(status)
+
+		require.NotNil(t, summary.Process, "workerID %q is local", workerID)
+		assert.Equal(t, 4242, summary.Process.Pid)
+		assert.Equal(t, int64(1700000000123), summary.Process.StartedAtMs)
+	}
+}
+
+func TestToDAGRunSummaryOmitsProcessForRemoteRun(t *testing.T) {
+	status := runningLocalStatus()
+	status.WorkerID = "worker-a@1234"
+
+	summary := toDAGRunSummary(status)
+
+	assert.Nil(t, summary.Process)
+}
+
+func TestToDAGRunSummaryOmitsProcessUnlessRunning(t *testing.T) {
+	// A waiting run has already ended the process that recorded this identity:
+	// resuming it starts a new attempt with a new process.
+	for _, status := range []ir.Status{
+		ir.NotStarted, ir.Queued, ir.Waiting, ir.Succeeded,
+		ir.Failed, ir.Aborted, ir.PartiallySucceeded, ir.Rejected,
+	} {
+		run := runningLocalStatus()
+		run.Status = status
+
+		summary := toDAGRunSummary(run)
+
+		assert.Nil(t, summary.Process, "status %s", status)
+	}
+}
+
+func TestToDAGRunSummaryOmitsProcessWithoutRecordedIdentity(t *testing.T) {
+	for _, identity := range []struct {
+		pid       ir.PID
+		startedAt int64
+	}{{0, 0}, {4242, 0}, {0, 1700000000123}} {
+		run := runningLocalStatus()
+		run.PID, run.PIDStartedAt = identity.pid, identity.startedAt
+
+		summary := toDAGRunSummary(run)
+
+		assert.Nil(t, summary.Process, "pid %d started %d", identity.pid, identity.startedAt)
+	}
+}
+
+func TestToDAGRunDetailsIncludesProcessForLocalRunningRun(t *testing.T) {
+	details := ToDAGRunDetails(runningLocalStatus())
+
+	require.NotNil(t, details.Process)
+	assert.Equal(t, 4242, details.Process.Pid)
+	assert.Equal(t, int64(1700000000123), details.Process.StartedAtMs)
+}
+
+func TestToDAGRunDetailsOmitsProcessForRemoteRun(t *testing.T) {
+	status := runningLocalStatus()
+	status.WorkerID = "worker-a@1234"
+
+	details := ToDAGRunDetails(status)
+
+	assert.Nil(t, details.Process)
+}

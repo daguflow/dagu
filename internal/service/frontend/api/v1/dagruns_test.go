@@ -18,6 +18,7 @@ import (
 
 	"github.com/dagucloud/dagu/v2/api/v1"
 	"github.com/dagucloud/dagu/v2/internal/cmn/config"
+	"github.com/dagucloud/dagu/v2/internal/cmn/procutil"
 	"github.com/dagucloud/dagu/v2/internal/cmn/stringutil"
 	"github.com/dagucloud/dagu/v2/internal/dagrun"
 	"github.com/dagucloud/dagu/v2/internal/ir"
@@ -2600,4 +2601,50 @@ func TestListDAGRunsByNameRemainsExact(t *testing.T) {
 	for _, run := range body.DagRuns {
 		require.Equal(t, "test-params-flag", run.Name)
 	}
+}
+
+func TestGetDAGRunDetailsExposesLocalProcessWhileRunning(t *testing.T) {
+	server := test.SetupServer(t)
+	release := newHoldFile(t)
+
+	dagName := "local_process_dag"
+	dagSpec := fmt.Sprintf(`steps:
+  - name: long-step
+    run: |
+%s`, indentCommandBlock(holdUntilFileExistsCommand(release), 6))
+
+	_ = server.Client().Post("/api/v1/dags", api.CreateNewDAGJSONRequestBody{
+		Name: dagName,
+		Spec: &dagSpec,
+	}).ExpectStatus(http.StatusCreated).Send(t)
+
+	startResp := server.Client().Post("/api/v1/dags/"+dagName+"/start", api.ExecuteDAGJSONRequestBody{}).
+		ExpectStatus(http.StatusOK).Send(t)
+
+	var startBody api.ExecuteDAG200JSONResponse
+	startResp.Unmarshal(t, &startBody)
+	require.NotEmpty(t, startBody.DagRunId)
+
+	stored := waitForStoredDAGRunStatus(t, server, dagName, startBody.DagRunId, 10*time.Second, func(status *ir.DAGRunStatus) bool {
+		return status.Status == ir.Running && hasRunProcessIdentity(status)
+	})
+
+	details := requireDAGRunDetails(t, server, dagName, startBody.DagRunId)
+	require.NotNil(t, details.DagRunDetails.Process)
+	require.Equal(t, int(stored.PID), details.DagRunDetails.Process.Pid)
+	require.Equal(t, stored.PIDStartedAt, details.DagRunDetails.Process.StartedAtMs)
+
+	// The reported pair must identify the live process, using the comparison a
+	// caller makes before attributing anything to this DAG-run.
+	matched, _, ok := procutil.MatchesStartTime(details.DagRunDetails.Process.Pid, details.DagRunDetails.Process.StartedAtMs)
+	require.True(t, ok)
+	require.True(t, matched)
+
+	releaseHoldFile(t, release)
+	waitForStoredDAGRunStatus(t, server, dagName, startBody.DagRunId, 10*time.Second, func(status *ir.DAGRunStatus) bool {
+		return status.Status == ir.Succeeded
+	})
+
+	finished := requireDAGRunDetails(t, server, dagName, startBody.DagRunId)
+	require.Nil(t, finished.DagRunDetails.Process, "a finished DAG-run names a process that has exited")
 }

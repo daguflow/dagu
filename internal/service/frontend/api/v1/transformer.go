@@ -14,6 +14,7 @@ import (
 	"github.com/dagucloud/dagu/v2/api/v1"
 	"github.com/dagucloud/dagu/v2/internal/cmn/fileutil"
 	"github.com/dagucloud/dagu/v2/internal/dagrun"
+	"github.com/dagucloud/dagu/v2/internal/dispatch"
 	"github.com/dagucloud/dagu/v2/internal/humantask"
 	"github.com/dagucloud/dagu/v2/internal/ir"
 	"github.com/dagucloud/dagu/v2/internal/persis"
@@ -268,6 +269,21 @@ func toPreconditionResult(result ir.ConditionResult) api.Condition {
 	return condition
 }
 
+// toDAGRunProcess reports the operating system process executing a DAG-run on
+// this host, and nil when there is none to report. A finished or waiting
+// DAG-run names a process that has already exited, and a DAG-run executed by a
+// worker names a process in that worker host's identifier namespace, so
+// neither is answerable here.
+func toDAGRunProcess(s ir.DAGRunStatus) *api.DAGRunProcess {
+	if s.Status != ir.Running || dispatch.IsRemoteWorkerID(s.WorkerID) {
+		return nil
+	}
+	if s.PID <= 0 || s.PIDStartedAt <= 0 {
+		return nil
+	}
+	return &api.DAGRunProcess{Pid: int(s.PID), StartedAtMs: s.PIDStartedAt}
+}
+
 func toTriggerType(t ir.TriggerType) *api.TriggerType {
 	if t == ir.TriggerTypeUnknown {
 		return nil
@@ -351,6 +367,7 @@ func toDAGRunSummary(s ir.DAGRunStatus) api.DAGRunSummary {
 		Status:             api.Status(s.Status),
 		StatusLabel:        api.StatusLabel(s.Status.String()),
 		WorkerId:           ptrOf(s.WorkerID),
+		Process:            toDAGRunProcess(s),
 		TriggerType:        toTriggerType(s.TriggerType),
 		TriggerActor:       ptrOf(s.TriggerActor),
 		Labels:             &s.Labels,
@@ -423,6 +440,7 @@ func ToDAGRunDetails(s ir.DAGRunStatus) api.DAGRunDetails {
 		Status:                 api.Status(s.Status),
 		StatusLabel:            api.StatusLabel(s.Status.String()),
 		WorkerId:               ptrOf(s.WorkerID),
+		Process:                toDAGRunProcess(s),
 		HumanTaskResumePending: humanTaskResumePending,
 		TriggerType:            toTriggerType(s.TriggerType),
 		TriggerActor:           ptrOf(s.TriggerActor),

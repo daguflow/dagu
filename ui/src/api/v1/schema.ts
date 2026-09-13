@@ -5002,6 +5002,16 @@ export interface components {
              */
             checkedAt: string;
         };
+        /** @description Operating system process executing a DAG-run on the host that served this response. Present only while the DAG-run is running on that host; absent for queued, waiting and finished DAG-runs, and for DAG-runs executed by a remote worker, because in those cases there is no local process to look at. The process may have exited since the status was recorded, so treat pid as valid only when the live process with that pid reports startedAtMs as its creation time. */
+        DAGRunProcess: {
+            /** @description Process ID of the process executing the DAG-run */
+            pid: number;
+            /**
+             * Format: int64
+             * @description Creation time of that process as a Unix timestamp in milliseconds, as reported by the host operating system. Compare it against the creation time of the live process with this pid before attributing anything to the DAG-run; operating systems reuse pids, and a pid alone cannot identify a process.
+             */
+            startedAtMs: number;
+        };
         /** @description Current status of a DAG-run */
         DAGRunSummary: {
             dagRunId: components["schemas"]["DAGRunId"];
@@ -5032,6 +5042,7 @@ export interface components {
             profileName?: components["schemas"]["RuntimeProfileName"];
             /** @description ID of the worker that executed this DAG-run ('local' for local execution) */
             workerId?: string;
+            process?: components["schemas"]["DAGRunProcess"];
             triggerType?: components["schemas"]["TriggerType"];
             /** @description Authenticated actor that initiated the DAG-run, when attribution is available */
             triggerActor?: string;
