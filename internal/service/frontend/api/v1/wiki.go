@@ -396,7 +396,7 @@ func (a *API) DownloadWikiPageAttachment(ctx context.Context, request api.Downlo
 	return api.DownloadWikiPageAttachment200ApplicationoctetStreamResponse{
 		Body: reader,
 		Headers: api.DownloadWikiPageAttachment200ResponseHeaders{
-			ContentDisposition: fmt.Sprintf("attachment; filename=%q", sanitizeFilename(attachment.Name)),
+			ContentDisposition: ptrOf(fmt.Sprintf("attachment; filename=%q", sanitizeFilename(attachment.Name))),
 		},
 		ContentLength: attachment.Size,
 	}, nil

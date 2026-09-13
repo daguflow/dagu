@@ -24,6 +24,10 @@ vi.mock('@/components/UpdateBanner', () => ({
   UpdateBanner: () => null,
 }));
 
+vi.mock('@/components/SchedulerPauseBanner', () => ({
+  SchedulerPauseBanner: () => null,
+}));
+
 vi.mock('../../menu', () => ({
   mainListItems: () => <div data-testid="sidebar-menu" />,
 }));

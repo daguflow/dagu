@@ -17,6 +17,7 @@ import (
 	"github.com/dagucloud/dagu/v2/internal/cmn/stringutil"
 	"github.com/dagucloud/dagu/v2/internal/ir"
 	"github.com/dagucloud/dagu/v2/internal/persis"
+	"github.com/dagucloud/dagu/v2/internal/schedulerstate"
 	"github.com/dagucloud/dagu/v2/internal/service/scheduler"
 	"github.com/dagucloud/dagu/v2/internal/spec"
 	"github.com/dagucloud/dagu/v2/internal/test"
@@ -191,6 +192,100 @@ func TestScheduleEditWhileSuspendedDoesNotSuppressNewSlot(t *testing.T) {
 	require.Equal(t, ir.TriggerTypeScheduler, lastDispatchType)
 	require.Equal(t, newSlot, lastDispatchTime)
 	lastDispatchMu.Unlock()
+
+	probe.Stop(context.Background(), cancel, 5*time.Second)
+}
+
+// observedPauseStore records the scheduler clock at each pause check, so a test
+// can prove the planner evaluated a DAG at a given scheduled slot.
+type observedPauseStore struct {
+	schedulerstate.PauseStore
+	now func() time.Time
+
+	mu        sync.Mutex
+	lastCheck time.Time
+}
+
+func (s *observedPauseStore) IsPaused(ctx context.Context) (bool, error) {
+	s.mu.Lock()
+	s.lastCheck = s.now()
+	s.mu.Unlock()
+	return s.PauseStore.IsPaused(ctx)
+}
+
+func (s *observedPauseStore) checkedAtOrAfter(t time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return !s.lastCheck.IsZero() && !s.lastCheck.Before(t)
+}
+
+// A pause is written by the API process and must be observed by the running
+// scheduler without a restart, and reversed the same way.
+func TestSchedulerPauseSuppressesDispatchUntilResumed(t *testing.T) {
+	tmpDir := t.TempDir()
+	dagsDir := filepath.Join(tmpDir, "dags")
+	require.NoError(t, os.MkdirAll(dagsDir, 0o755))
+
+	const dagName = "scheduler-pause-dispatch"
+	dagSpec := "name: " + dagName + "\n" +
+		"schedule: \"* * * * *\"\n" +
+		"steps:\n" +
+		"  - name: step\n" +
+		"    command: echo \"hello\"\n"
+	require.NoError(t, fileutil.WriteFileAtomic(filepath.Join(dagsDir, dagName+".yaml"), []byte(dagSpec), 0o644))
+
+	th := test.SetupScheduler(t, test.WithDAGsDir(dagsDir))
+	require.NoError(t, th.PauseStore.Set(th.Context, true, "admin", "maintenance"))
+
+	// Start shortly before a slot so the paused slot and the slot after the
+	// resume both fit inside the test budget.
+	clockBase := time.Date(2026, 4, 27, 10, 0, 50, 0, time.UTC)
+	clockStart := time.Now()
+	schedulerNow := func() time.Time { return clockBase.Add(time.Since(clockStart)) }
+
+	observed := &observedPauseStore{PauseStore: th.PauseStore, now: schedulerNow}
+	th.PauseStore = observed
+
+	sc, err := th.NewSchedulerInstance(t)
+	require.NoError(t, err)
+	sc.SetClock(schedulerNow)
+
+	var dispatchCount atomic.Int32
+	sc.SetDispatchFunc(func(_ context.Context, entry scheduler.DAGEntry, _ string, _ ir.TriggerType, _ time.Time) error {
+		if entry.DAG != nil && entry.DAG.Name == dagName {
+			dispatchCount.Add(1)
+		}
+		return nil
+	})
+
+	ctx, cancel := context.WithCancel(th.Context)
+	defer cancel()
+
+	h := intgharness.New(t, th.Helper)
+	probe := h.StartScheduler(ctx, sc, th.EntryReader)
+	probe.RequireRunningWithSchedule(dagName, "* * * * *", 30*time.Second)
+
+	// Derive the slot from when registration actually finished, not from the
+	// clock base. On a slow runner registration can outlast the first slot, and
+	// a slot fixed in advance would then have passed before the DAG was
+	// schedulable at all, making the assertion below vacuous.
+	pausedSlot := schedulerNow().Truncate(time.Minute).Add(time.Minute)
+
+	// Wait for that slot to elapse, plus enough grace for the tick to run. This
+	// gate is independent of the pause mechanism on purpose: a pause that stops
+	// working then shows up as a dispatch rather than as a missing signal.
+	probe.RequireEventually("expected a scheduled slot to elapse while paused", 90*time.Second, func() bool {
+		return schedulerNow().After(pausedSlot.Add(3 * time.Second))
+	})
+	require.Zero(t, dispatchCount.Load(), "paused scheduler must not dispatch scheduled runs")
+	require.True(t, observed.checkedAtOrAfter(pausedSlot),
+		"planner must consult the pause flag at a scheduled slot")
+
+	require.NoError(t, th.PauseStore.Set(th.Context, false, "", ""))
+
+	probe.RequireEventually("expected dispatch after resume", 120*time.Second, func() bool {
+		return dispatchCount.Load() > 0
+	})
 
 	probe.Stop(context.Background(), cancel, 5*time.Second)
 }

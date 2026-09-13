@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { LicenseBanner } from '@/components/LicenseBanner';
+import { SchedulerPauseBanner } from '@/components/SchedulerPauseBanner';
 import { UpdateBanner } from '@/components/UpdateBanner';
 import { useConfig } from '@/contexts/ConfigContext';
 import { cn } from '@/lib/utils';
@@ -253,6 +254,7 @@ function Content({ navbarColor, children }: LayoutProps) {
           <ContentNavigation pathname={location.pathname} />
           <UpdateBanner />
           <LicenseBanner />
+          <SchedulerPauseBanner />
           <div className="min-h-0 flex-1 overflow-auto p-4 md:p-6 w-full">
             {children}
           </div>

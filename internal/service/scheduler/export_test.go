@@ -30,6 +30,7 @@ func NewWithHooksForTest(
 		deps.ServiceRegistry,
 		deps.CoordinatorClient,
 		deps.SchedulerStateStore,
+		deps.SchedulerPauseStore,
 		schedulerHooks{onLockWait: hooks.OnLockWait},
 		nil,
 	)

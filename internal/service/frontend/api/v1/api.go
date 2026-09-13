@@ -62,7 +62,7 @@ import (
 
 var _ api.StrictServerInterface = (*API)(nil)
 
-var loadBaseOpenAPISpec = sync.OnceValues(api.GetSwagger)
+var loadBaseOpenAPISpec = sync.OnceValues(api.GetSpec)
 
 type API struct {
 	dagRepository        *persis.DAGRepository
@@ -102,6 +102,7 @@ type API struct {
 	workspaceStore       workspace.Store
 	leaseStaleThreshold  time.Duration
 	schedulerStateStore  schedulerstate.Store
+	schedulerPauseStore  schedulerstate.PauseStore
 	dagMutationNotifier  func(fileName string)
 	wikiMutationNotifier func()
 	baseConfigProvider   dagsettings.BaseConfigProvider
@@ -322,6 +323,14 @@ func WithOIDCRoleMapping(load func() config.OIDCRoleMapping) APIOption {
 func WithSchedulerStateStore(store schedulerstate.Store) APIOption {
 	return func(a *API) {
 		a.schedulerStateStore = store
+	}
+}
+
+// WithSchedulerPauseStore sets the store holding the cluster-wide scheduler
+// pause flag.
+func WithSchedulerPauseStore(store schedulerstate.PauseStore) APIOption {
+	return func(a *API) {
+		a.schedulerPauseStore = store
 	}
 }
 

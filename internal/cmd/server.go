@@ -77,6 +77,7 @@ func newServer(ctx *Context, rs *resource.Service, stores frontend.Stores, opts 
 		DAGRunLeaseStore:     ctx.Persistence.DAGRunLeaseStore,
 		WorkerHeartbeatStore: ctx.Persistence.WorkerHeartbeatStore,
 		SchedulerStateStore:  ctx.Persistence.SchedulerStateStore,
+		SchedulerPauseStore:  ctx.Persistence.SchedulerPauseStore,
 		Caches:               ctx.Caches,
 		LicenseManager:       ctx.LicenseManager,
 		ResourceService:      rs,

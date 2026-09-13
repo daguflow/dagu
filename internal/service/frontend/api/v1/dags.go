@@ -2151,7 +2151,22 @@ func (a *API) nextRunProjection(ctx context.Context) func(*ir.DAG, time.Time) ti
 		}
 	}
 
-	return scheduler.NewNextRunProjection(location, schedulerState)
+	projection := scheduler.NewNextRunProjection(location, schedulerState)
+	if a.schedulerPauseStore == nil {
+		return projection
+	}
+	// A pause only reaches the persisted projection on the scheduler's next
+	// tick. Suppress it here so listings stop advertising a next run the moment
+	// the pause is recorded.
+	paused, err := a.schedulerPauseStore.IsPaused(ctx)
+	if err != nil {
+		logger.Warn(ctx, "Failed to read scheduler pause state for DAG next-run projection", tag.Error(err))
+		return projection
+	}
+	if paused {
+		return func(*ir.DAG, time.Time) time.Time { return time.Time{} }
+	}
+	return projection
 }
 
 // parseIntParam parses an integer string, returning defaultVal if parsing fails or value is <= 0.

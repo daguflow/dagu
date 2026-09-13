@@ -24,6 +24,7 @@ const (
 	appStreamDebounceInterval  = 200 * time.Millisecond
 	wikiPollingInterval        = 30 * time.Second
 	schedulerStateFileName     = "state.json"
+	schedulerPauseFileName     = "paused.json"
 )
 
 type AppEventType string
@@ -747,7 +748,9 @@ func (s *AppStreamService) handleSuspendFlagEvent(_, relPath string, op fsnotify
 }
 
 func (s *AppStreamService) handleSchedulerStateEvent(_, relPath string, op fsnotify.Op) {
-	if filepath.ToSlash(relPath) != schedulerStateFileName {
+	switch filepath.ToSlash(relPath) {
+	case schedulerStateFileName, schedulerPauseFileName:
+	default:
 		return
 	}
 	s.coalescer.Enqueue(AppEvent{

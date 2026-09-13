@@ -5,14 +5,107 @@ package api
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dagucloud/dagu/v2/api/v1"
+	"github.com/dagucloud/dagu/v2/internal/audit"
+	"github.com/dagucloud/dagu/v2/internal/auth"
 	"github.com/dagucloud/dagu/v2/internal/cmn/logger"
 	"github.com/dagucloud/dagu/v2/internal/cmn/logger/tag"
 	"github.com/dagucloud/dagu/v2/internal/serviceregistry"
 	"github.com/dagucloud/dagu/v2/internal/tunnel"
 )
+
+// schedulerPauseUnavailable is returned when no pause store is configured, which
+// means the deployment cannot record or observe a scheduler pause.
+const schedulerPauseUnavailable = "Scheduler pause state not configured"
+
+// maxSchedulerPauseReasonLength bounds the pause reason. It is rendered in a
+// banner that every client polls, so it is checked here rather than relying on
+// the OpenAPI bound, which only applies when strict validation is enabled.
+const maxSchedulerPauseReasonLength = 512
+
+// GetSchedulerPauseState returns the cluster-wide scheduler pause state.
+//
+// Deliberately readable by any authenticated user: a paused scheduler explains
+// why nothing is running, and that explanation is useless if only admins see it.
+func (a *API) GetSchedulerPauseState(ctx context.Context, _ api.GetSchedulerPauseStateRequestObject) (api.GetSchedulerPauseStateResponseObject, error) {
+	if a.schedulerPauseStore == nil {
+		return api.GetSchedulerPauseStatedefaultJSONResponse{
+			Body:       api.Error{Code: api.ErrorCodeInternalError, Message: schedulerPauseUnavailable},
+			StatusCode: http.StatusInternalServerError,
+		}, nil
+	}
+
+	pause, err := a.schedulerPauseStore.Get(ctx)
+	if err != nil {
+		logger.Error(ctx, "Failed to read scheduler pause state", tag.Error(err))
+		return api.GetSchedulerPauseStatedefaultJSONResponse{
+			Body:       api.Error{Code: api.ErrorCodeInternalError, Message: "Failed to read scheduler pause state"},
+			StatusCode: http.StatusInternalServerError,
+		}, nil
+	}
+
+	response := api.GetSchedulerPauseState200JSONResponse{Paused: pause.Paused}
+	if !pause.PausedAt.IsZero() {
+		response.PausedAt = ptrOf(pause.PausedAt.Format(time.RFC3339))
+	}
+	if pause.PausedBy != "" {
+		response.PausedBy = ptrOf(pause.PausedBy)
+	}
+	if pause.Reason != "" {
+		response.Reason = ptrOf(pause.Reason)
+	}
+	return response, nil
+}
+
+// UpdateSchedulerPauseState pauses or resumes scheduler-driven run creation for
+// every DAG at once. Admin only, because it affects every workspace.
+func (a *API) UpdateSchedulerPauseState(ctx context.Context, request api.UpdateSchedulerPauseStateRequestObject) (api.UpdateSchedulerPauseStateResponseObject, error) {
+	if err := a.requireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	if a.schedulerPauseStore == nil {
+		return api.UpdateSchedulerPauseStatedefaultJSONResponse{
+			Body:       api.Error{Code: api.ErrorCodeInternalError, Message: schedulerPauseUnavailable},
+			StatusCode: http.StatusInternalServerError,
+		}, nil
+	}
+
+	var reason string
+	if request.Body.Reason != nil {
+		reason = *request.Body.Reason
+	}
+	if utf8.RuneCountInString(reason) > maxSchedulerPauseReasonLength {
+		return nil, &Error{
+			HTTPStatus: http.StatusBadRequest,
+			Code:       api.ErrorCodeBadRequest,
+			Message:    fmt.Sprintf("reason must be at most %d characters", maxSchedulerPauseReasonLength),
+		}
+	}
+	actor := ""
+	if user, ok := auth.UserFromContext(ctx); ok && user != nil {
+		actor = user.Username
+	}
+
+	if err := a.schedulerPauseStore.Set(ctx, request.Body.Paused, actor, reason); err != nil {
+		return nil, fmt.Errorf("error updating scheduler pause state: %w", err)
+	}
+
+	action := "scheduler_pause"
+	if !request.Body.Paused {
+		action = "scheduler_resume"
+	}
+	a.logAudit(ctx, audit.CategorySystem, action, map[string]any{
+		"paused": request.Body.Paused,
+		"reason": reason,
+	})
+
+	return api.UpdateSchedulerPauseState200Response{}, nil
+}
 
 // GetSchedulerStatus returns the status of all registered scheduler instances
 func (a *API) GetSchedulerStatus(ctx context.Context, _ api.GetSchedulerStatusRequestObject) (api.GetSchedulerStatusResponseObject, error) {

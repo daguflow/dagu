@@ -107,6 +107,7 @@ type Dependencies struct {
 	ServiceRegistry      serviceregistry.ServiceRegistry
 	CoordinatorClient    dispatch.Dispatcher
 	SchedulerStateStore  schedulerstate.Store
+	SchedulerPauseStore  schedulerstate.PauseStore
 	DAGRunLeaseStore     dispatch.DAGRunLeaseStore
 	DispatchTaskStore    dispatch.DispatchTaskStore
 	WorkerHeartbeatStore dispatch.WorkerHeartbeatStore
@@ -155,6 +156,7 @@ func New(cfg *config.Config, deps Dependencies) (*Scheduler, error) {
 		deps.ServiceRegistry,
 		deps.CoordinatorClient,
 		deps.SchedulerStateStore,
+		deps.SchedulerPauseStore,
 		schedulerHooks{},
 		profileResolver,
 	)
@@ -187,6 +189,7 @@ func newScheduler(
 	reg serviceregistry.ServiceRegistry,
 	coordinatorCli dispatch.Dispatcher,
 	stateStore schedulerstate.Store,
+	pauseStore schedulerstate.PauseStore,
 	hooks schedulerHooks,
 	profileResolver DAGProfileResolver,
 ) (*Scheduler, error) {
@@ -221,7 +224,7 @@ func newScheduler(
 
 	// Resolve IsSuspended once at construction time.
 	eventCh := er.Events()
-	isSuspended := dagRepository.IsSuspended
+	isSuspended := newSuspensionChecker(pauseStore, dagRepository.IsSuspended)
 	processor := NewQueueProcessor(
 		queueStore,
 		dagRunRepository,

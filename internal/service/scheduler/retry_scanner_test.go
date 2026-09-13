@@ -14,6 +14,7 @@ import (
 	"github.com/dagucloud/dagu/v2/internal/ir"
 	"github.com/dagucloud/dagu/v2/internal/persis"
 	queuedomain "github.com/dagucloud/dagu/v2/internal/queue"
+	"github.com/dagucloud/dagu/v2/internal/schedulerstate"
 	"github.com/dagucloud/dagu/v2/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -185,6 +186,78 @@ func TestSuspendFlagName(t *testing.T) {
 		}, "")
 
 		assert.Equal(t, "logical-name", got)
+	})
+}
+
+type stubPauseStore struct {
+	paused bool
+	err    error
+}
+
+func (s stubPauseStore) IsPaused(context.Context) (bool, error) {
+	return s.paused, s.err
+}
+
+func (s stubPauseStore) Get(context.Context) (schedulerstate.Pause, error) {
+	return schedulerstate.Pause{Paused: s.paused}, s.err
+}
+
+func (stubPauseStore) Set(context.Context, bool, string, string) error {
+	return nil
+}
+
+func TestNewSuspensionChecker(t *testing.T) {
+	t.Parallel()
+
+	perDAG := func(_ context.Context, name string) (bool, error) {
+		return name == "suspended-dag", nil
+	}
+
+	t.Run("PauseSuspendsEveryDAG", func(t *testing.T) {
+		t.Parallel()
+
+		check := newSuspensionChecker(stubPauseStore{paused: true}, perDAG)
+
+		got, err := check(t.Context(), "running-dag")
+
+		require.NoError(t, err)
+		assert.True(t, got)
+	})
+
+	t.Run("FallsBackToPerDAGFlagWhenNotPaused", func(t *testing.T) {
+		t.Parallel()
+
+		check := newSuspensionChecker(stubPauseStore{}, perDAG)
+
+		running, err := check(t.Context(), "running-dag")
+		require.NoError(t, err)
+		assert.False(t, running)
+
+		suspended, err := check(t.Context(), "suspended-dag")
+		require.NoError(t, err)
+		assert.True(t, suspended)
+	})
+
+	t.Run("PropagatesPauseReadFailure", func(t *testing.T) {
+		t.Parallel()
+
+		readErr := errors.New("pause read failed")
+		check := newSuspensionChecker(stubPauseStore{err: readErr}, perDAG)
+
+		_, err := check(t.Context(), "running-dag")
+
+		assert.ErrorIs(t, err, readErr)
+	})
+
+	t.Run("WithoutPauseStoreUsesPerDAGFlag", func(t *testing.T) {
+		t.Parallel()
+
+		check := newSuspensionChecker(nil, perDAG)
+
+		got, err := check(t.Context(), "suspended-dag")
+
+		require.NoError(t, err)
+		assert.True(t, got)
 	})
 }
 

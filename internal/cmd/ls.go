@@ -148,6 +148,17 @@ func lsNextRunProjection(ctx *Context) func(*ir.DAG, time.Time) time.Time {
 	}
 
 	projectNextRun := scheduler.NewNextRunProjection(ctx.Config.Core.Location, state)
+
+	// A pause only reaches the persisted projection on the scheduler's next
+	// tick, so report no next run as soon as the pause is recorded.
+	if store := ctx.Persistence.SchedulerPauseStore; store != nil {
+		paused, err := store.IsPaused(ctx)
+		if err != nil {
+			_, _ = fmt.Fprintf(ctx.Command.ErrOrStderr(), "warning: failed to read scheduler pause state: %s\n", err)
+		} else if paused {
+			return func(*ir.DAG, time.Time) time.Time { return time.Time{} }
+		}
+	}
 	return projectNextRun
 }
 
