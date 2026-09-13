@@ -72,6 +72,22 @@ func (s *WorkDirStore) Remove(_ context.Context, ref dagrun.WorkDirRef) error {
 	if err := fileutil.RemoveAll(dir); err != nil {
 		return fmt.Errorf("remove work directory %s: %w", dir, err)
 	}
+	if ref.DAGRun != ref.RootDAGRun {
+		return nil
+	}
+	return removeDirIfEmpty(filepath.Dir(dir))
+}
+
+// removeDirIfEmpty tolerates a concurrent run populating or removing dir
+// between the check and the remove; only a directory that is still present
+// and empty after a failed remove is a real failure.
+func removeDirIfEmpty(dir string) error {
+	if !isDirEmpty(dir) {
+		return nil
+	}
+	if err := fileutil.Remove(dir); err != nil && isDirEmpty(dir) {
+		return fmt.Errorf("remove empty directory %s: %w", dir, err)
+	}
 	return nil
 }
 

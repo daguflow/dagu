@@ -211,8 +211,36 @@ func TestWorkDirStoreUsesSeparateRoot(t *testing.T) {
 	for _, dir := range workDirs {
 		require.NoDirExists(t, dir)
 	}
+	require.NoDirExists(t, filepath.Join(workRoot, "daily"))
 	require.DirExists(t, workRoot)
 	require.NoError(t, store.Remove(ctx, refs[0]))
+}
+
+func TestWorkDirStorePrunesDAGDir(t *testing.T) {
+	ctx := context.Background()
+	workRoot := t.TempDir()
+	store := NewWorkDirStore(workRoot, filepath.Join(t.TempDir(), "dag-runs"))
+	dagDir := filepath.Join(workRoot, "daily")
+	refs := make([]dagrun.WorkDirRef, 2)
+	for i, id := range []string{"run-1", "run-2"} {
+		ref := ir.NewDAGRunRef("daily", id)
+		refs[i] = dagrun.WorkDirRef{RootDAGRun: ref, DAGRun: ref}
+		_, err := store.Materialize(ctx, refs[i])
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, store.Remove(ctx, refs[0]))
+	require.DirExists(t, filepath.Join(dagDir, workDirName("run-2"), "root"))
+
+	stray := filepath.Join(dagDir, "stray")
+	require.NoError(t, os.WriteFile(stray, nil, 0o600))
+	require.NoError(t, store.Remove(ctx, refs[1]))
+	require.FileExists(t, stray)
+
+	require.NoError(t, os.Remove(stray))
+	require.NoError(t, store.Remove(ctx, refs[1]))
+	require.NoDirExists(t, dagDir)
+	require.DirExists(t, workRoot)
 }
 
 func TestStoreRetriesLegacySubDAGRunInSameDirectory(t *testing.T) {
