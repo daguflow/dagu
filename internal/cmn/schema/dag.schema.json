@@ -46,15 +46,15 @@
           "items": {
             "type": "string"
           },
-          "description": "List of paths to .env files to load environment variables from. Files can be specified as absolute paths, or relative to: DAG file directory, base config directory, or user's home directory."
+          "description": "List of paths to .env files to load environment variables from. Paths can be absolute, '~'-prefixed, or relative to the DAG's working_dir or the DAG file directory."
         }
       ],
-      "description": "Specifies .env files to load environment variables from. By default, '.env' is loaded. When files are specified, '.env' is automatically prepended to the list. All files are loaded sequentially with later files overriding earlier values. Set to empty array [] to disable all .env loading. Files are loaded relative to the DAG's working_dir."
+      "description": "Specifies .env files to load environment variables from. By default, '.env' is loaded. When files are specified, '.env' is automatically prepended to the list. All files are loaded sequentially with later files overriding earlier values. Set to empty array [] to disable all .env loading. Relative paths are searched in the DAG's working_dir first, then in the DAG file directory."
     },
     "working_dir": {
       "examples": ["/var/data/etl"],
       "type": "string",
-      "description": "Working directory for the DAG. A relative value resolves from the DAG file directory. Relative paths in the DAG (including dotenv files) resolve from this directory. When omitted, each run uses its per-run work directory (DAG_RUN_WORK_DIR) as the working directory."
+      "description": "Working directory for the DAG. A relative value resolves from the DAG file directory. Relative paths in the DAG resolve from this directory; a relative dotenv path is searched here first, then in the DAG file directory. When omitted, each run uses its per-run work directory (DAG_RUN_WORK_DIR) as the working directory."
     },
     "consts": {
       "type": "array",
