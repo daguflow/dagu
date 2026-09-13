@@ -7,6 +7,7 @@ import { useConfig } from '../../contexts/ConfigContext';
 import WorkersSummary from '../../features/dashboard/components/WorkersSummary';
 import PathsCard from '../../features/system-status/components/PathsCard';
 import ResourceChart from '../../features/system-status/components/ResourceChart';
+import SchedulerPauseControl from '../../features/system-status/components/SchedulerPauseControl';
 import ServiceCard from '../../features/system-status/components/ServiceCard';
 import TunnelStatusCard from '../../features/system-status/components/TunnelStatusCard';
 import { useQuery } from '../../hooks/api';
@@ -170,6 +171,7 @@ function SystemStatus() {
         </div>
         <div className="flex items-center gap-2">
           <PathsCard />
+          <SchedulerPauseControl />
           <Button
             onClick={() => setAutoRefresh(!autoRefresh)}
             aria-label={ts('Auto-refresh {state}', {
