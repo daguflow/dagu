@@ -242,7 +242,6 @@ func TestSchedulerPauseSuppressesDispatchUntilResumed(t *testing.T) {
 	clockBase := time.Date(2026, 4, 27, 10, 0, 50, 0, time.UTC)
 	clockStart := time.Now()
 	schedulerNow := func() time.Time { return clockBase.Add(time.Since(clockStart)) }
-	pausedSlot := clockBase.Truncate(time.Minute).Add(time.Minute)
 
 	observed := &observedPauseStore{PauseStore: th.PauseStore, now: schedulerNow}
 	th.PauseStore = observed
@@ -264,12 +263,18 @@ func TestSchedulerPauseSuppressesDispatchUntilResumed(t *testing.T) {
 
 	h := intgharness.New(t, th.Helper)
 	probe := h.StartScheduler(ctx, sc, th.EntryReader)
-	probe.RequireRunningWithSchedule(dagName, "* * * * *", 10*time.Second)
+	probe.RequireRunningWithSchedule(dagName, "* * * * *", 30*time.Second)
 
-	// Wait for a scheduled slot to elapse, plus enough grace for the tick to run.
-	// This gate is independent of the pause mechanism on purpose: a pause that
-	// stops working then shows up as a dispatch rather than as a missing signal.
-	probe.RequireEventually("expected a scheduled slot to elapse while paused", 60*time.Second, func() bool {
+	// Derive the slot from when registration actually finished, not from the
+	// clock base. On a slow runner registration can outlast the first slot, and
+	// a slot fixed in advance would then have passed before the DAG was
+	// schedulable at all, making the assertion below vacuous.
+	pausedSlot := schedulerNow().Truncate(time.Minute).Add(time.Minute)
+
+	// Wait for that slot to elapse, plus enough grace for the tick to run. This
+	// gate is independent of the pause mechanism on purpose: a pause that stops
+	// working then shows up as a dispatch rather than as a missing signal.
+	probe.RequireEventually("expected a scheduled slot to elapse while paused", 90*time.Second, func() bool {
 		return schedulerNow().After(pausedSlot.Add(3 * time.Second))
 	})
 	require.Zero(t, dispatchCount.Load(), "paused scheduler must not dispatch scheduled runs")
