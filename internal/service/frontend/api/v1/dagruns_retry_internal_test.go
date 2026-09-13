@@ -490,7 +490,7 @@ func TestRetryDAGRun_RejectsIncludeDownstreamWithoutStep(t *testing.T) {
 func TestRetryDAGRunSchema_IncludeDownstreamRequiresStepName(t *testing.T) {
 	t.Parallel()
 
-	swagger, err := openapiv1.GetSwagger()
+	swagger, err := openapiv1.GetSpec()
 	require.NoError(t, err)
 	pathItem := swagger.Paths.Find("/dag-runs/{name}/{dagRunId}/retry")
 	require.NotNil(t, pathItem)

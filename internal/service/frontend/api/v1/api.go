@@ -62,7 +62,7 @@ import (
 
 var _ api.StrictServerInterface = (*API)(nil)
 
-var loadBaseOpenAPISpec = sync.OnceValues(api.GetSwagger)
+var loadBaseOpenAPISpec = sync.OnceValues(api.GetSpec)
 
 type API struct {
 	dagRepository        *persis.DAGRepository

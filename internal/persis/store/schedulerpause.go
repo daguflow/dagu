@@ -20,7 +20,7 @@ const schedulerPauseID = "paused"
 
 type schedulerPauseRecord struct {
 	Paused   bool      `json:"paused"`
-	PausedAt time.Time `json:"pausedAt,omitempty"`
+	PausedAt time.Time `json:"pausedAt"`
 	PausedBy string    `json:"pausedBy,omitempty"`
 	Reason   string    `json:"reason,omitempty"`
 }
