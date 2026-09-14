@@ -806,7 +806,7 @@ func TestRunsCollectionResource(t *testing.T) {
 	require.NoError(t, dagStore.Create(ctx, "run-dag", []byte("name: run-dag\nsteps: []\n")))
 
 	runRepo := testutil.NewFileDAGRunRepository(filepath.Join(t.TempDir(), "dag-runs"), persis.DAGRunRepositoryOptions{})
-	dag := &ir.DAG{Name: "run-dag"}
+	dag := &ir.DAG{Name: "run-dag", Labels: ir.NewLabels([]string{"env=prod", "team=backend"})}
 	attempt, err := runRepo.CreateAttempt(ctx, dag, time.Now(), "run-1", persis.DAGRunCreateAttemptOptions{})
 	require.NoError(t, err)
 	require.NoError(t, attempt.Open(ctx))
@@ -843,8 +843,10 @@ func TestRunsCollectionResource(t *testing.T) {
 	require.Equal(t, resourceMIMEJSON, filtered.Contents[0].MIMEType)
 	require.Contains(t, filtered.Contents[0].Text, `"dagRunId":"run-1"`)
 
+	assertCollectionQueryEncoding(t, ctx, session, readResourceRunsCollectionURI, dag.Name)
+
 	_, err = session.ReadResource(ctx, &mcpsdk.ReadResourceParams{
-		URI: readResourceRunsCollectionURI + "?bogus=1",
+		URI: readResourceRunsCollectionURI + "?bogus=*",
 	})
 	require.Error(t, err)
 }
@@ -853,7 +855,7 @@ func TestDAGsCollectionResource(t *testing.T) {
 	ctx := context.Background()
 	baseDir := t.TempDir()
 	altDir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(altDir, "alt-dag.yaml"), []byte("name: alt-dag\nsteps: []\n"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(altDir, "alt-dag.yaml"), []byte("name: alt-dag\nlabels: [env=prod, team=backend]\nsteps: []\n"), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(baseDir, "main-dag.yaml"), []byte("name: main-dag\nsteps: []\n"), 0600))
 
 	cfg := &config.Config{}
@@ -890,11 +892,42 @@ func TestDAGsCollectionResource(t *testing.T) {
 	require.Contains(t, filtered.Contents[0].Text, `"name":"alt-dag"`)
 	require.NotContains(t, filtered.Contents[0].Text, `"name":"main-dag"`)
 
+	assertCollectionQueryEncoding(t, ctx, session, readResourceDAGsCollectionURI, "alt-dag")
+
 	// Serving the filtered form must not widen the accepted parameter set.
 	_, err = session.ReadResource(ctx, &mcpsdk.ReadResourceParams{
-		URI: readResourceDAGsCollectionURI + "?bogus=1",
+		URI: readResourceDAGsCollectionURI + "?bogus=*",
 	})
 	require.Error(t, err)
+}
+
+func assertCollectionQueryEncoding(t *testing.T, ctx context.Context, session *mcpsdk.ClientSession, baseURI, wantName string) {
+	t.Helper()
+
+	for _, query := range []string{
+		"labels=env=pr*",
+		"labels=env%3Dpr%2A",
+		"labels=env%3Dprod%2C+team%3Dbackend",
+		"labels=env%3Dprod%2C%20team%3Dbackend",
+	} {
+		t.Run(query, func(t *testing.T) {
+			tool := callTool(t, ctx, session, toolRead, readInput{URI: baseURI + "?" + query})
+			require.False(t, tool.IsError)
+			data, err := json.Marshal(structuredMap(t, tool)["data"])
+			require.NoError(t, err)
+			require.Contains(t, string(data), `"name":"`+wantName+`"`)
+
+			// Resource links must remain readable with the tool's query encoding.
+			require.Len(t, tool.Content, 2)
+			link, ok := tool.Content[1].(*mcpsdk.ResourceLink)
+			require.True(t, ok)
+			read, err := session.ReadResource(ctx, &mcpsdk.ReadResourceParams{URI: link.URI})
+			require.NoError(t, err)
+			require.Len(t, read.Contents, 1)
+			require.Equal(t, resourceMIMEJSON, read.Contents[0].MIMEType)
+			require.JSONEq(t, string(data), read.Contents[0].Text)
+		})
+	}
 }
 
 func TestReadToolCanReadReferenceResource(t *testing.T) {

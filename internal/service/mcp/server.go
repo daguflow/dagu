@@ -189,13 +189,13 @@ func registerResources(server *mcpsdk.Server, svc *Service) {
 		MIMEType:    resourceMIMEJSON,
 	}, svc.readResource)
 
-	// Resource reads resolve by exact URI first and by template second, so the
-	// collection needs a template to serve the filtered form as well.
+	// Reserved expansion lets valid query characters such as '+' and '*'
+	// reach the collection's query validator.
 	server.AddResourceTemplate(&mcpsdk.ResourceTemplate{
-		URITemplate: "dagu://dags{?page,perPage,name,labels,active,sort,order}",
+		URITemplate: "dagu://dags?{+query}",
 		Name:        "dags_query",
 		Title:       "DAGs (filtered)",
-		Description: "DAG summaries visible to the caller, narrowed by list filters.",
+		Description: "DAG summaries visible to the caller. query is a URL query string accepted by dagu_read target=dags.",
 		MIMEType:    resourceMIMEJSON,
 	}, svc.readResource)
 
@@ -242,10 +242,10 @@ func registerResources(server *mcpsdk.Server, svc *Service) {
 	// The SDK matches registered resources by exact URI, so query-bearing
 	// reads of the collection route through this template instead.
 	server.AddResourceTemplate(&mcpsdk.ResourceTemplate{
-		URITemplate: "dagu://runs{?name,dagRunId,status*,fromDate,toDate,limit,cursor,labels}",
+		URITemplate: "dagu://runs?{+query}",
 		Name:        "dag_runs_filtered",
 		Title:       "Filtered DAG-runs",
-		Description: "DAG-run summaries filtered by query parameters, as accepted by dagu_read target=runs. status may be repeated.",
+		Description: "DAG-run summaries visible to the caller. query is a URL query string accepted by dagu_read target=runs. status may be repeated.",
 		MIMEType:    resourceMIMEJSON,
 	}, svc.readResource)
 
