@@ -54,7 +54,7 @@ function renderPage() {
   return { setTitle };
 }
 
-function renderChannelsPage(settings: object) {
+function renderChannelsPage(settings: object, channels: object[] = []) {
   const settingsQuery = {
     data: settings,
     error: undefined,
@@ -62,7 +62,7 @@ function renderChannelsPage(settings: object) {
     mutate: vi.fn(),
   };
   const channelsQuery = {
-    data: { channels: [] },
+    data: { channels },
     error: undefined,
     isLoading: false,
     mutate: vi.fn(),
@@ -182,6 +182,229 @@ describe('NotificationsPage', () => {
 });
 
 describe('NotificationChannelsPage', () => {
+  const slackChannel = {
+    id: 'slack',
+    name: 'slack-test',
+    type: 'slack',
+    enabled: true,
+    slack: {
+      webhookUrlConfigured: true,
+      webhookUrlPreview: 'https://hooks.slack.com/services/***',
+    },
+  };
+
+  it('searches saved channels by name and provider', async () => {
+    const user = userEvent.setup();
+    renderChannelsPage({}, [
+      slackChannel,
+      {
+        id: 'email',
+        name: 'Ops email',
+        type: 'email',
+        enabled: false,
+        email: { to: ['ops@example.com'] },
+      },
+    ]);
+    const search = screen.getByRole('searchbox', { name: 'Search channels' });
+    await user.type(search, 'SLACK');
+    expect(screen.getByRole('listitem', { name: 'slack-test' })).toBeVisible();
+    expect(
+      screen.queryByRole('listitem', { name: 'Ops email' })
+    ).not.toBeInTheDocument();
+    await user.clear(search);
+    await user.type(search, 'unknown');
+    expect(screen.getByText('No matching channels')).toBeVisible();
+    await user.clear(search);
+    expect(screen.getByRole('listitem', { name: 'Ops email' })).toBeVisible();
+  });
+
+  it('edits one channel and preserves its saved secret', async () => {
+    const user = userEvent.setup();
+    mocks.client.PUT.mockResolvedValue({
+      data: { ...slackChannel, name: 'Production alerts' },
+    });
+    renderChannelsPage({}, [slackChannel]);
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    const dialog = within(screen.getByRole('dialog'));
+    await user.clear(dialog.getByLabelText('Channel name'));
+    await user.type(dialog.getByLabelText('Channel name'), 'Production alerts');
+    await user.click(dialog.getByRole('button', { name: 'Save changes' }));
+    expect(mocks.client.PUT).toHaveBeenCalledWith(
+      '/notification-channels/{channelId}',
+      expect.objectContaining({
+        params: {
+          path: { channelId: 'slack' },
+          query: { remoteNode: 'local' },
+        },
+        body: expect.objectContaining({
+          name: 'Production alerts',
+          slack: expect.objectContaining({ webhookUrl: undefined }),
+        }),
+      })
+    );
+    expect(
+      screen.getByRole('listitem', { name: 'Production alerts' })
+    ).toBeVisible();
+  });
+
+  it('cancels channel edits and creation without saving', async () => {
+    const user = userEvent.setup();
+    renderChannelsPage({}, [slackChannel]);
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    await user.clear(screen.getByLabelText('Channel name'));
+    await user.type(screen.getByLabelText('Channel name'), 'Unsaved name');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(screen.getByLabelText('Channel name')).toHaveValue('slack-test');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(screen.getByRole('button', { name: 'Add channel' }));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+    expect(mocks.client.PUT).not.toHaveBeenCalled();
+    expect(mocks.client.POST).not.toHaveBeenCalled();
+  });
+
+  it('creates a channel with the selected provider', async () => {
+    const user = userEvent.setup();
+    mocks.client.POST.mockResolvedValue({ data: slackChannel });
+    renderChannelsPage({});
+    await user.click(screen.getByRole('button', { name: 'Add channel' }));
+    await user.click(screen.getByLabelText('Provider'));
+    await user.click(screen.getByRole('option', { name: 'Slack' }));
+    await user.clear(screen.getByLabelText('Channel name'));
+    await user.type(screen.getByLabelText('Channel name'), 'slack-test');
+    await user.type(
+      screen.getByPlaceholderText('Slack webhook URL'),
+      'https://hooks.slack.com/services/test'
+    );
+    await user.click(screen.getByRole('button', { name: 'Create channel' }));
+    expect(mocks.client.POST).toHaveBeenCalledWith(
+      '/notification-channels',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          type: 'slack',
+          name: 'slack-test',
+          slack: expect.objectContaining({
+            webhookUrl: 'https://hooks.slack.com/services/test',
+          }),
+        }),
+      })
+    );
+    expect(screen.getByRole('listitem', { name: 'slack-test' })).toBeVisible();
+  });
+
+  it('keeps edits and reports save failures inside the editor', async () => {
+    const user = userEvent.setup();
+    mocks.client.PUT.mockResolvedValue({ error: { message: 'Save failed' } });
+    renderChannelsPage({}, [slackChannel]);
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    await user.type(screen.getByLabelText('Channel name'), '-new');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(
+      within(screen.getByRole('dialog')).getByRole('alert')
+    ).toHaveTextContent('Save failed');
+    expect(screen.getByLabelText('Channel name')).toHaveValue('slack-test-new');
+  });
+
+  it('persists toggles and keeps the saved state when a toggle fails', async () => {
+    const user = userEvent.setup();
+    mocks.client.PUT.mockResolvedValueOnce({
+      data: { ...slackChannel, enabled: false },
+    }).mockResolvedValueOnce({ error: { message: 'Toggle failed' } });
+    renderChannelsPage({}, [slackChannel]);
+    const toggle = screen.getByRole('switch', { name: 'Toggle slack-test' });
+    await user.click(toggle);
+    expect(toggle).not.toBeChecked();
+    await user.click(toggle);
+    expect(toggle).not.toBeChecked();
+    expect(screen.getByRole('alert')).toHaveTextContent('Toggle failed');
+  });
+
+  it('tests a disabled channel and shows delivery feedback', async () => {
+    const user = userEvent.setup();
+    mocks.client.POST.mockResolvedValueOnce({
+      data: { results: [{ delivered: true }] },
+    }).mockResolvedValueOnce({
+      data: {
+        results: [{ delivered: false, error: 'Destination unavailable' }],
+      },
+    });
+    renderChannelsPage({}, [{ ...slackChannel, enabled: false }]);
+    await user.click(screen.getByRole('button', { name: 'Test' }));
+    expect(screen.getByText('Test delivered')).toBeVisible();
+    expect(mocks.client.POST).toHaveBeenCalledWith(
+      '/notification-channels/{channelId}/test',
+      {
+        params: {
+          path: { channelId: 'slack' },
+          query: { remoteNode: 'local' },
+        },
+      }
+    );
+    await user.click(screen.getByRole('button', { name: 'Test' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Destination unavailable'
+    );
+  });
+
+  it('deletes only the selected channel after confirmation', async () => {
+    const user = userEvent.setup();
+    mocks.client.DELETE.mockResolvedValue({});
+    renderChannelsPage({}, [slackChannel]);
+    await user.click(
+      screen.getByRole('button', { name: 'Channel actions for slack-test' })
+    );
+    await user.click(screen.getByRole('menuitem', { name: 'Delete channel' }));
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: 'Delete',
+      })
+    );
+    expect(mocks.client.DELETE).toHaveBeenCalledWith(
+      '/notification-channels/{channelId}',
+      {
+        params: {
+          path: { channelId: 'slack' },
+          query: { remoteNode: 'local' },
+        },
+      }
+    );
+    expect(screen.getByText('No channels configured.')).toBeVisible();
+  });
+
+  it('cancels email delivery edits and saves only the configured sender', async () => {
+    const user = userEvent.setup();
+    const settings = {
+      smtp: { host: 'smtp.example.com', port: '587', passwordConfigured: true },
+    };
+    mocks.client.PUT.mockResolvedValue({ data: settings });
+    renderChannelsPage(settings);
+    await user.click(screen.getByRole('button', { name: 'Configure' }));
+    await user.clear(screen.getByPlaceholderText('SMTP host'));
+    await user.type(
+      screen.getByPlaceholderText('SMTP host'),
+      'unsaved.example.com'
+    );
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(screen.getByRole('button', { name: 'Configure' }));
+    expect(screen.getByPlaceholderText('SMTP host')).toHaveValue(
+      'smtp.example.com'
+    );
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(mocks.client.PUT).toHaveBeenCalledWith(
+      '/notification-settings',
+      expect.objectContaining({
+        body: {
+          smtp: expect.objectContaining({
+            host: 'smtp.example.com',
+            password: undefined,
+          }),
+        },
+      })
+    );
+    expect(screen.getByText('Email delivery saved')).toBeVisible();
+  });
+
   it('blocks channel controls when delivery is unavailable', () => {
     mocks.useQuery.mockReturnValue({
       data: undefined,
@@ -220,6 +443,7 @@ describe('NotificationChannelsPage', () => {
       },
     });
 
+    await user.click(screen.getByRole('button', { name: 'Configure' }));
     expect(screen.getByPlaceholderText('Password configured')).toBeVisible();
 
     await user.click(screen.getByLabelText('SMTP authentication'));
@@ -248,6 +472,7 @@ describe('NotificationChannelsPage', () => {
       },
     });
 
+    await user.click(screen.getByRole('button', { name: 'Configure' }));
     expect(
       screen.getByPlaceholderText('Client secret configured')
     ).toBeVisible();
@@ -265,6 +490,7 @@ describe('NotificationChannelsPage', () => {
   it('keeps typed OAuth secrets when identity fields change', async () => {
     const user = userEvent.setup();
     renderChannelsPage({});
+    await user.click(screen.getByRole('button', { name: 'Configure' }));
 
     await user.click(screen.getByLabelText('SMTP authentication'));
     await user.click(screen.getByRole('option', { name: 'OAuth 2.0' }));
@@ -336,7 +562,7 @@ describe('NotificationRulesPage', () => {
   it('adds a route for an unused channel', async () => {
     const user = userEvent.setup();
     renderRulesPage([
-      { id: 'email', name: 'email-test', type: 'smtp', enabled: true },
+      { id: 'email', name: 'email-test', type: 'email', enabled: true },
     ]);
 
     await user.click(screen.getByRole('button', { name: 'Add rule' }));

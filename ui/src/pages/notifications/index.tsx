@@ -3,6 +3,8 @@
 
 import {
   AlertTriangle,
+  ArrowRight,
+  ChevronRight,
   Bell,
   MoreHorizontal,
   Send,
@@ -13,7 +15,6 @@ import {
   Loader2,
   Mail,
   Plus,
-  Save,
   Trash2,
 } from 'lucide-react';
 import {
@@ -26,9 +27,8 @@ import {
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
-import ConfirmDialog from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import Title from '@/components/ui/title';
@@ -61,9 +61,7 @@ import { cn } from '@/lib/utils';
 import { WorkspaceKind, workspaceNameForSelection } from '@/lib/workspace';
 import { NotificationChannelsSection } from '@/features/dags/components/dag-details/notifications/NotificationSections';
 import {
-  blankChannel,
   channelInput,
-  deliveryLabel,
   DraftChannel,
   draftChannelFromAPI,
   EVENT_OPTIONS,
@@ -73,13 +71,11 @@ import {
 import {
   components,
   NotificationEventType,
-  NotificationProviderType,
   NotificationSMTPOAuthProvider,
 } from '@/api/v1/schema';
 import { Link } from 'react-router-dom';
 import { I18nText } from '@/i18n/I18nText';
 import { I18nProps } from '@/i18n/I18nProps';
-import { I18nTemplate } from '@/i18n/I18nTemplate';
 import { useI18n } from '@/i18n/I18nProvider';
 
 type NotificationWorkspaceSettings =
@@ -1483,18 +1479,14 @@ export function NotificationRulesPage() {
 
 export function NotificationChannelsPage() {
   const client = useClient();
+  const { ts } = useI18n();
   const appBarContext = useContext(AppBarContext);
   const remoteNode = appBarContext.selectedRemoteNode || 'local';
   const [smtpDraft, setSMTPDraft] = useState<SMTPDraft>(blankSMTPDraft);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [channels, setChannels] = useState<DraftChannel[]>([]);
-  const [savingChannelIndex, setSavingChannelIndex] = useState<number | null>(
-    null
-  );
-  const [deleteChannelIndex, setDeleteChannelIndex] = useState<number | null>(
-    null
-  );
-  const [error, setError] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const {
@@ -1535,6 +1527,8 @@ export function NotificationChannelsPage() {
 
   const isLoading = settingsLoading || channelsLoading;
   const oauthDestination = smtpOAuthDestinations[smtpDraft.oauthProvider];
+  const savedSMTP = settingsData?.smtp;
+  const emailConfigured = !!(savedSMTP?.host || savedSMTP?.oauth);
   const loadError =
     apiErrorMessage(settingsLoadError, 'Failed to load email delivery') ??
     apiErrorMessage(channelsLoadError, 'Failed to load channels');
@@ -1555,13 +1549,28 @@ export function NotificationChannelsPage() {
     }
   }, [channelsData]);
 
+  useEffect(() => {
+    setSettingsOpen(false);
+    setSettingsError(null);
+    setNotice(null);
+  }, [remoteNode]);
+
   if (loadError && !isLoading) {
     return <StatusCard error={loadError} notice={null} />;
   }
 
+  const openSettings = () => {
+    setSMTPDraft(
+      settingsData ? smtpDraftFromAPI(settingsData) : { ...blankSMTPDraft }
+    );
+    setSettingsError(null);
+    setNotice(null);
+    setSettingsOpen(true);
+  };
+
   const saveSettings = async () => {
     setIsSavingSettings(true);
-    setError(null);
+    setSettingsError(null);
     setNotice(null);
     try {
       const { data: settings, error: apiError } = await client.PUT(
@@ -1581,8 +1590,9 @@ export function NotificationChannelsPage() {
         mutateSettings(settings, { revalidate: false });
       }
       setNotice('Email delivery saved');
+      setSettingsOpen(false);
     } catch (err) {
-      setError(
+      setSettingsError(
         err instanceof Error ? err.message : 'Failed to save email delivery'
       );
     } finally {
@@ -1590,497 +1600,607 @@ export function NotificationChannelsPage() {
     }
   };
 
-  const addChannel = () => {
-    setChannels((current) => [
-      ...current,
-      blankChannel(NotificationProviderType.email),
-    ]);
-  };
-
-  const updateChannel = (
-    index: number,
-    updater: (channel: DraftChannel) => DraftChannel
-  ) => {
+  const saveChannel = async (channel: DraftChannel) => {
+    const response = channel.id
+      ? await client.PUT('/notification-channels/{channelId}', {
+          params: { path: { channelId: channel.id }, query: { remoteNode } },
+          body: channelInput(channel),
+        })
+      : await client.POST('/notification-channels', {
+          params: { query: { remoteNode } },
+          body: channelInput(channel),
+        });
+    if (response.error || !response.data) {
+      throw new Error(response.error?.message || ts('Failed to save channel'));
+    }
+    const saved = draftChannelFromAPI(response.data);
     setChannels((current) =>
-      current.map((channel, channelIndex) =>
-        channelIndex === index ? updater(channel) : channel
-      )
+      channel.id
+        ? current.map((item) => (item.id === channel.id ? saved : item))
+        : [...current, saved]
     );
+    void mutateChannels();
   };
 
-  const saveChannel = async (index: number) => {
-    const channel = channels[index];
-    if (!channel) return;
-    setSavingChannelIndex(index);
-    setError(null);
-    setNotice(null);
-    try {
-      const response = channel.id
-        ? await client.PUT('/notification-channels/{channelId}', {
-            params: {
-              path: { channelId: channel.id },
-              query: { remoteNode },
-            },
-            body: channelInput(channel),
-          })
-        : await client.POST('/notification-channels', {
-            params: {
-              query: { remoteNode },
-            },
-            body: channelInput(channel),
-          });
-      if (response.error) {
-        throw new Error(response.error.message || 'Failed to save channel');
+  const deleteChannel = async (channel: DraftChannel) => {
+    const { error } = await client.DELETE(
+      '/notification-channels/{channelId}',
+      {
+        params: { path: { channelId: channel.id! }, query: { remoteNode } },
       }
-      const data = response.data;
-      setChannels((current) =>
-        current.map((item, itemIndex) =>
-          itemIndex === index ? draftChannelFromAPI(data) : item
-        )
-      );
-      mutateChannels();
-      setNotice('Channel saved');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save channel');
-    } finally {
-      setSavingChannelIndex(null);
+    );
+    if (error) {
+      throw new Error(error.message || ts('Failed to delete channel'));
     }
+    setChannels((current) => current.filter((item) => item.id !== channel.id));
+    void mutateChannels();
   };
 
-  const deleteChannel = async () => {
-    if (deleteChannelIndex === null) return;
-    const channel = channels[deleteChannelIndex];
-    if (!channel) return;
-    setDeleteChannelIndex(null);
-    if (!channel.id) {
-      setChannels((current) =>
-        current.filter((_, index) => index !== deleteChannelIndex)
-      );
-      return;
-    }
-    setError(null);
-    setNotice(null);
-    try {
-      const { error: apiError } = await client.DELETE(
-        '/notification-channels/{channelId}',
-        {
-          params: {
-            path: { channelId: channel.id },
-            query: { remoteNode },
-          },
-        }
-      );
-      if (apiError) {
-        throw new Error(apiError.message || 'Failed to delete channel');
+  const testChannel = async (channelId: string) => {
+    const { data, error } = await client.POST(
+      '/notification-channels/{channelId}/test',
+      {
+        params: { path: { channelId }, query: { remoteNode } },
       }
-      setChannels((current) =>
-        current.filter((_, index) => index !== deleteChannelIndex)
-      );
-      mutateChannels();
-      setNotice('Channel deleted');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete channel');
+    );
+    if (error) {
+      throw new Error(error.message || ts('Failed to send test notification'));
     }
+    return data?.results[0];
   };
 
   return (
     <div className="mx-auto w-full max-w-[1120px] space-y-7 pb-3 pt-2">
       <NotificationHeader activeTab="channels" />
-      <StatusCard error={error ?? loadError} notice={notice} />
+      <StatusCard error={loadError} notice={notice} />
       {isLoading && (
         <I18nProps>
           <LoadingCard label="Refreshing notification channels..." />
         </I18nProps>
       )}
 
-      <Card>
-        <CardHeader className="grid-cols-[1fr_auto]">
-          <div className="flex items-center gap-2">
-            <Mail className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-sm">
-              <I18nText text={'Email Delivery'} />
-            </CardTitle>
-            <Badge
-              variant={
-                smtpDraft.host || smtpDraft.mode === 'oauth'
-                  ? 'success'
-                  : 'default'
-              }
-            >
-              {smtpDraft.host || smtpDraft.mode === 'oauth' ? (
-                <I18nText text={'Configured'} />
-              ) : (
-                <I18nText text={'Not Configured'} />
-              )}
-            </Badge>
-          </div>
-          <Button size="sm" onClick={saveSettings} disabled={isSavingSettings}>
-            {isSavingSettings ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4" />
-            )}
-            <I18nText text={'Save'} />
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid gap-3 md:grid-cols-2">
-            <Select
-              value={smtpDraft.mode}
-              onValueChange={(value) =>
-                setSMTPDraft((current) =>
-                  value === 'oauth'
-                    ? {
-                        ...current,
-                        mode: 'oauth',
-                        password: '',
-                        clearPassword: false,
-                      }
-                    : { ...current, mode: 'password' }
-                )
-              }
-            >
-              <I18nProps>
-                <SelectTrigger aria-label="SMTP authentication">
-                  <I18nProps>
-                    <SelectValue placeholder="Authentication" />
-                  </I18nProps>
-                </SelectTrigger>
-              </I18nProps>
-              <SelectContent>
-                <SelectItem value="password">
-                  <I18nText text={'Password'} />
-                </SelectItem>
-                <SelectItem value="oauth">
-                  <I18nText text={'OAuth 2.0'} />
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            {smtpDraft.mode === 'oauth' && (
-              <Select
-                value={smtpDraft.oauthProvider}
-                onValueChange={(value) =>
-                  setSMTPDraft((current) =>
-                    resetOAuthSecrets({
-                      ...current,
-                      oauthProvider: value as NotificationSMTPOAuthProvider,
-                      tenantId: '',
-                      clientId: '',
-                    })
-                  )
-                }
-              >
-                <I18nProps>
-                  <SelectTrigger aria-label="OAuth provider">
-                    <I18nProps>
-                      <SelectValue placeholder="OAuth provider" />
-                    </I18nProps>
-                  </SelectTrigger>
-                </I18nProps>
-                <SelectContent>
-                  <SelectItem value={NotificationSMTPOAuthProvider.microsoft}>
-                    <I18nText text={'Microsoft 365'} />
-                  </SelectItem>
-                  <SelectItem
-                    value={NotificationSMTPOAuthProvider.google_service_account}
-                  >
-                    <I18nText text={'Google Workspace service account'} />
-                  </SelectItem>
-                  <SelectItem
-                    value={NotificationSMTPOAuthProvider.google_refresh}
-                  >
-                    <I18nText text={'Google refresh token'} />
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_120px]">
-            <I18nProps>
-              <Input
-                value={
-                  smtpDraft.mode === 'oauth'
-                    ? oauthDestination.host
-                    : smtpDraft.host
-                }
-                placeholder="SMTP host"
-                disabled={smtpDraft.mode === 'oauth'}
-                onChange={(event) =>
-                  setSMTPDraft((current) => ({
-                    ...current,
-                    host: event.target.value,
-                  }))
-                }
-              />
-            </I18nProps>
-            <I18nProps>
-              <Input
-                value={
-                  smtpDraft.mode === 'oauth'
-                    ? oauthDestination.port
-                    : smtpDraft.port
-                }
-                placeholder="Port"
-                inputMode="numeric"
-                disabled={smtpDraft.mode === 'oauth'}
-                onChange={(event) =>
-                  setSMTPDraft((current) => ({
-                    ...current,
-                    port: event.target.value,
-                  }))
-                }
-              />
-            </I18nProps>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <I18nProps>
-              <Input
-                value={smtpDraft.username}
-                placeholder={
-                  smtpDraft.mode === 'oauth' ? 'Sender mailbox' : 'Username'
-                }
-                onChange={(event) => {
-                  const username = event.target.value;
-                  setSMTPDraft((current) => {
-                    const next = { ...current, username };
-                    return current.mode === 'oauth' &&
-                      username !== current.username
-                      ? resetOAuthSecretState(next)
-                      : next;
-                  });
-                }}
-              />
-            </I18nProps>
-            {smtpDraft.mode === 'password' && (
-              <I18nProps>
-                <I18nProps>
-                  <Input
-                    type="password"
-                    value={smtpDraft.password}
-                    placeholder={
-                      smtpDraft.passwordConfigured
-                        ? 'Password configured'
-                        : 'Password'
-                    }
-                    onChange={(event) =>
-                      setSMTPDraft((current) => ({
-                        ...current,
-                        password: event.target.value,
-                        clearPassword: false,
-                      }))
-                    }
-                  />
-                </I18nProps>
-              </I18nProps>
-            )}
-            {smtpDraft.mode === 'oauth' && (
-              <I18nProps>
-                <I18nProps>
-                  <Input
-                    value={smtpDraft.from}
-                    placeholder="Default sender"
-                    onChange={(event) =>
-                      setSMTPDraft((current) => ({
-                        ...current,
-                        from: event.target.value,
-                      }))
-                    }
-                  />
-                </I18nProps>
-              </I18nProps>
-            )}
-          </div>
-          {smtpDraft.mode === 'password' && (
-            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
-              <I18nProps>
-                <Input
-                  value={smtpDraft.from}
-                  placeholder="Default sender"
-                  onChange={(event) =>
-                    setSMTPDraft((current) => ({
-                      ...current,
-                      from: event.target.value,
-                    }))
-                  }
-                />
-              </I18nProps>
-              <label className="flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm">
-                <Checkbox
-                  checked={smtpDraft.clearPassword}
-                  disabled={!smtpDraft.passwordConfigured}
-                  onCheckedChange={(value) =>
-                    setSMTPDraft((current) => ({
-                      ...current,
-                      password: '',
-                      clearPassword: !!value,
-                    }))
-                  }
-                />
-                <I18nText text={'Clear password'} />
-              </label>
-            </div>
-          )}
-          {smtpDraft.mode === 'oauth' &&
-            smtpDraft.oauthProvider ===
-              NotificationSMTPOAuthProvider.microsoft && (
-              <>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <I18nProps>
-                    <Input
-                      value={smtpDraft.tenantId}
-                      placeholder="Microsoft tenant ID"
-                      onChange={(event) => {
-                        const tenantId = event.target.value;
-                        setSMTPDraft((current) =>
-                          resetOAuthSecretState({ ...current, tenantId })
-                        );
-                      }}
-                    />
-                  </I18nProps>
-                  <I18nProps>
-                    <Input
-                      value={smtpDraft.clientId}
-                      placeholder="Client ID"
-                      onChange={(event) => {
-                        const clientId = event.target.value;
-                        setSMTPDraft((current) =>
-                          resetOAuthSecretState({ ...current, clientId })
-                        );
-                      }}
-                    />
-                  </I18nProps>
-                </div>
-                <I18nProps>
-                  <Input
-                    type="password"
-                    value={smtpDraft.clientSecret}
-                    placeholder={
-                      smtpDraft.clientSecretConfigured
-                        ? 'Client secret configured'
-                        : 'Client secret'
-                    }
-                    onChange={(event) =>
-                      setSMTPDraft((current) => ({
-                        ...current,
-                        clientSecret: event.target.value,
-                      }))
-                    }
-                  />
-                </I18nProps>
-              </>
-            )}
-          {smtpDraft.mode === 'oauth' &&
-            smtpDraft.oauthProvider ===
-              NotificationSMTPOAuthProvider.google_service_account && (
-              <I18nProps>
-                <Textarea
-                  value={smtpDraft.serviceAccountJson}
-                  placeholder={
-                    smtpDraft.serviceAccountJsonConfigured
-                      ? 'Service-account JSON configured'
-                      : 'Service-account JSON'
-                  }
-                  onChange={(event) =>
-                    setSMTPDraft((current) => ({
-                      ...current,
-                      serviceAccountJson: event.target.value,
-                    }))
-                  }
-                />
-              </I18nProps>
-            )}
-          {smtpDraft.mode === 'oauth' &&
-            smtpDraft.oauthProvider ===
-              NotificationSMTPOAuthProvider.google_refresh && (
-              <>
-                <I18nProps>
-                  <Input
-                    value={smtpDraft.clientId}
-                    placeholder="Google OAuth client ID"
-                    onChange={(event) => {
-                      const clientId = event.target.value;
-                      setSMTPDraft((current) =>
-                        resetOAuthSecretState({ ...current, clientId })
-                      );
-                    }}
-                  />
-                </I18nProps>
-                <I18nProps>
-                  <Input
-                    type="password"
-                    value={smtpDraft.clientSecret}
-                    placeholder={
-                      smtpDraft.clientSecretConfigured
-                        ? 'Client secret configured'
-                        : 'Client secret'
-                    }
-                    onChange={(event) =>
-                      setSMTPDraft((current) => ({
-                        ...current,
-                        clientSecret: event.target.value,
-                      }))
-                    }
-                  />
-                </I18nProps>
-                <I18nProps>
-                  <Input
-                    type="password"
-                    value={smtpDraft.refreshToken}
-                    placeholder={
-                      smtpDraft.refreshTokenConfigured
-                        ? 'Refresh token configured'
-                        : 'Refresh token'
-                    }
-                    onChange={(event) =>
-                      setSMTPDraft((current) => ({
-                        ...current,
-                        refreshToken: event.target.value,
-                      }))
-                    }
-                  />
-                </I18nProps>
-                <p className="text-xs text-muted-foreground">
-                  <I18nText
-                    text={
-                      'The refresh token must have been granted with offline access and the https://mail.google.com/ scope.'
-                    }
-                  />
-                </p>
-              </>
-            )}
-        </CardContent>
-      </Card>
-
-      <NotificationChannelsSection
-        channels={channels}
-        savingChannelIndex={savingChannelIndex}
-        onAdd={addChannel}
-        onUpdate={updateChannel}
-        onSave={saveChannel}
-        onDelete={setDeleteChannelIndex}
-      />
-
-      <I18nProps>
-        <ConfirmDialog
-          title="Delete Channel"
-          buttonText="Delete"
-          visible={deleteChannelIndex !== null}
-          dismissModal={() => setDeleteChannelIndex(null)}
-          onSubmit={deleteChannel}
-        >
-          <I18nTemplate
-            text="Delete {channel}?"
-            values={{
-              channel:
-                deleteChannelIndex !== null && channels[deleteChannelIndex] ? (
-                  deliveryLabel(channels[deleteChannelIndex])
-                ) : (
-                  <I18nText text="channel" />
-                ),
-            }}
+      {!isLoading && (
+        <>
+          <NotificationChannelsSection
+            key={remoteNode}
+            channels={channels}
+            onSave={saveChannel}
+            onDelete={deleteChannel}
+            onTest={testChannel}
           />
-        </ConfirmDialog>
-      </I18nProps>
+          <section
+            aria-label={ts('Email delivery')}
+            className="flex flex-wrap items-center justify-between gap-5 rounded-lg border border-border bg-card px-5 py-5 sm:px-6"
+          >
+            <div className="flex min-w-0 items-start gap-4">
+              <span className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <Mail className="size-6" />
+              </span>
+              <div className="min-w-0 space-y-2">
+                <div className="flex flex-wrap items-center gap-3">
+                  <h2 className="text-lg font-medium">
+                    <I18nText text={'Email delivery'} />
+                  </h2>
+                  <Badge variant={emailConfigured ? 'success' : 'default'}>
+                    <I18nText
+                      text={emailConfigured ? 'Configured' : 'Not Configured'}
+                    />
+                  </Badge>
+                </div>
+                <p className="text-base text-muted-foreground">
+                  <I18nText text={'Shared sender for email channels.'} />
+                </p>
+                <p className="break-all text-sm text-muted-foreground">
+                  {emailConfigured
+                    ? `${savedSMTP?.oauth ? 'OAuth 2.0' : 'SMTP'} · ${savedSMTP?.host || ''} · ${ts('Port')} ${savedSMTP?.port || ''}`
+                    : ts(
+                        'Configure email delivery before testing an email channel.'
+                      )}
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              className="h-11 text-base"
+              onClick={openSettings}
+            >
+              <I18nText text={'Configure'} />
+              <ChevronRight className="size-4" />
+            </Button>
+          </section>
+          <p className="flex flex-wrap items-start gap-2 text-sm text-muted-foreground">
+            <Info className="size-4 shrink-0" />
+            <I18nText
+              text={
+                'Adding a channel does not send notifications. Set up a rule to start delivery.'
+              }
+            />
+            <Link
+              to="/notification-rules"
+              className="inline-flex items-center gap-2 text-primary hover:underline"
+            >
+              <I18nText text={'Go to Rules'} />
+              <ArrowRight className="size-4" />
+            </Link>
+          </p>
+        </>
+      )}
+      <Dialog
+        open={settingsOpen}
+        onOpenChange={(open) => {
+          if (!isSavingSettings) {
+            setSettingsOpen(open);
+          }
+        }}
+      >
+        <DialogContent
+          className="flex max-h-[90dvh] w-[calc(100%-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0"
+          onInteractOutside={(event) => event.preventDefault()}
+        >
+          <DialogHeader className="border-b border-border px-6 py-5 pr-12">
+            <DialogTitle>
+              <I18nText text={'Email delivery'} />
+            </DialogTitle>
+            <DialogDescription>
+              <I18nText text={'Shared sender for email channels.'} />
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="flex min-h-0 flex-col"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveSettings();
+            }}
+          >
+            <fieldset
+              disabled={isSavingSettings}
+              className="min-h-0 space-y-4 overflow-y-auto p-6 [&_input]:h-11 [&_input]:text-base [&_textarea]:text-base"
+            >
+              {settingsError && (
+                <p role="alert" className="text-base text-destructive">
+                  {settingsError}
+                </p>
+              )}
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">
+                    <I18nText text={'SMTP authentication'} />
+                  </p>
+                  <Select
+                    value={smtpDraft.mode}
+                    onValueChange={(value) =>
+                      setSMTPDraft((current) =>
+                        value === 'oauth'
+                          ? {
+                              ...current,
+                              mode: 'oauth',
+                              password: '',
+                              clearPassword: false,
+                            }
+                          : { ...current, mode: 'password' }
+                      )
+                    }
+                  >
+                    <I18nProps>
+                      <SelectTrigger
+                        className="h-11 w-full text-base"
+                        aria-label="SMTP authentication"
+                      >
+                        <I18nProps>
+                          <SelectValue placeholder="Authentication" />
+                        </I18nProps>
+                      </SelectTrigger>
+                    </I18nProps>
+                    <SelectContent>
+                      <SelectItem value="password">
+                        <I18nText text={'Password'} />
+                      </SelectItem>
+                      <SelectItem value="oauth">
+                        <I18nText text={'OAuth 2.0'} />
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {smtpDraft.mode === 'oauth' && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">
+                      <I18nText text={'OAuth provider'} />
+                    </p>
+                    <Select
+                      value={smtpDraft.oauthProvider}
+                      onValueChange={(value) =>
+                        setSMTPDraft((current) =>
+                          resetOAuthSecrets({
+                            ...current,
+                            oauthProvider:
+                              value as NotificationSMTPOAuthProvider,
+                            tenantId: '',
+                            clientId: '',
+                          })
+                        )
+                      }
+                    >
+                      <I18nProps>
+                        <SelectTrigger
+                          className="h-11 w-full text-base"
+                          aria-label="OAuth provider"
+                        >
+                          <I18nProps>
+                            <SelectValue placeholder="OAuth provider" />
+                          </I18nProps>
+                        </SelectTrigger>
+                      </I18nProps>
+                      <SelectContent>
+                        <SelectItem
+                          value={NotificationSMTPOAuthProvider.microsoft}
+                        >
+                          <I18nText text={'Microsoft 365'} />
+                        </SelectItem>
+                        <SelectItem
+                          value={
+                            NotificationSMTPOAuthProvider.google_service_account
+                          }
+                        >
+                          <I18nText text={'Google Workspace service account'} />
+                        </SelectItem>
+                        <SelectItem
+                          value={NotificationSMTPOAuthProvider.google_refresh}
+                        >
+                          <I18nText text={'Google refresh token'} />
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_120px]">
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium">
+                    <I18nText text={'SMTP host'} />
+                  </span>
+                  <I18nProps>
+                    <Input
+                      value={
+                        smtpDraft.mode === 'oauth'
+                          ? oauthDestination.host
+                          : smtpDraft.host
+                      }
+                      placeholder="SMTP host"
+                      disabled={smtpDraft.mode === 'oauth'}
+                      onChange={(event) =>
+                        setSMTPDraft((current) => ({
+                          ...current,
+                          host: event.target.value,
+                        }))
+                      }
+                    />
+                  </I18nProps>
+                </label>
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium">
+                    <I18nText text={'Port'} />
+                  </span>
+                  <I18nProps>
+                    <Input
+                      value={
+                        smtpDraft.mode === 'oauth'
+                          ? oauthDestination.port
+                          : smtpDraft.port
+                      }
+                      placeholder="Port"
+                      inputMode="numeric"
+                      disabled={smtpDraft.mode === 'oauth'}
+                      onChange={(event) =>
+                        setSMTPDraft((current) => ({
+                          ...current,
+                          port: event.target.value,
+                        }))
+                      }
+                    />
+                  </I18nProps>
+                </label>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium">
+                    <I18nText
+                      text={
+                        smtpDraft.mode === 'oauth'
+                          ? 'Sender mailbox'
+                          : 'Username'
+                      }
+                    />
+                  </span>
+                  <I18nProps>
+                    <Input
+                      value={smtpDraft.username}
+                      placeholder={
+                        smtpDraft.mode === 'oauth'
+                          ? 'Sender mailbox'
+                          : 'Username'
+                      }
+                      onChange={(event) => {
+                        const username = event.target.value;
+                        setSMTPDraft((current) => {
+                          const next = { ...current, username };
+                          return current.mode === 'oauth' &&
+                            username !== current.username
+                            ? resetOAuthSecretState(next)
+                            : next;
+                        });
+                      }}
+                    />
+                  </I18nProps>
+                </label>
+                {smtpDraft.mode === 'password' && (
+                  <I18nProps>
+                    <label className="block space-y-2">
+                      <span className="text-sm font-medium">
+                        <I18nText text={'Password'} />
+                      </span>
+                      <I18nProps>
+                        <Input
+                          type="password"
+                          value={smtpDraft.password}
+                          placeholder={
+                            smtpDraft.passwordConfigured
+                              ? 'Password configured'
+                              : 'Password'
+                          }
+                          onChange={(event) =>
+                            setSMTPDraft((current) => ({
+                              ...current,
+                              password: event.target.value,
+                              clearPassword: false,
+                            }))
+                          }
+                        />
+                      </I18nProps>
+                    </label>
+                  </I18nProps>
+                )}
+                {smtpDraft.mode === 'oauth' && (
+                  <I18nProps>
+                    <label className="block space-y-2">
+                      <span className="text-sm font-medium">
+                        <I18nText text={'Default sender'} />
+                      </span>
+                      <I18nProps>
+                        <Input
+                          value={smtpDraft.from}
+                          placeholder="Default sender"
+                          onChange={(event) =>
+                            setSMTPDraft((current) => ({
+                              ...current,
+                              from: event.target.value,
+                            }))
+                          }
+                        />
+                      </I18nProps>
+                    </label>
+                  </I18nProps>
+                )}
+              </div>
+              {smtpDraft.mode === 'password' && (
+                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
+                  <label className="block space-y-2">
+                    <span className="text-sm font-medium">
+                      <I18nText text={'Default sender'} />
+                    </span>
+                    <I18nProps>
+                      <Input
+                        value={smtpDraft.from}
+                        placeholder="Default sender"
+                        onChange={(event) =>
+                          setSMTPDraft((current) => ({
+                            ...current,
+                            from: event.target.value,
+                          }))
+                        }
+                      />
+                    </I18nProps>
+                  </label>
+                  <label className="flex h-11 self-end items-center gap-2 rounded-md border border-border px-3 text-sm">
+                    <Checkbox
+                      checked={smtpDraft.clearPassword}
+                      disabled={!smtpDraft.passwordConfigured}
+                      onCheckedChange={(value) =>
+                        setSMTPDraft((current) => ({
+                          ...current,
+                          password: '',
+                          clearPassword: !!value,
+                        }))
+                      }
+                    />
+                    <I18nText text={'Clear password'} />
+                  </label>
+                </div>
+              )}
+              {smtpDraft.mode === 'oauth' &&
+                smtpDraft.oauthProvider ===
+                  NotificationSMTPOAuthProvider.microsoft && (
+                  <>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <label className="block space-y-2">
+                        <span className="text-sm font-medium">
+                          <I18nText text={'Microsoft tenant ID'} />
+                        </span>
+                        <I18nProps>
+                          <Input
+                            value={smtpDraft.tenantId}
+                            placeholder="Microsoft tenant ID"
+                            onChange={(event) => {
+                              const tenantId = event.target.value;
+                              setSMTPDraft((current) =>
+                                resetOAuthSecretState({ ...current, tenantId })
+                              );
+                            }}
+                          />
+                        </I18nProps>
+                      </label>
+                      <label className="block space-y-2">
+                        <span className="text-sm font-medium">
+                          <I18nText text={'Client ID'} />
+                        </span>
+                        <I18nProps>
+                          <Input
+                            value={smtpDraft.clientId}
+                            placeholder="Client ID"
+                            onChange={(event) => {
+                              const clientId = event.target.value;
+                              setSMTPDraft((current) =>
+                                resetOAuthSecretState({ ...current, clientId })
+                              );
+                            }}
+                          />
+                        </I18nProps>
+                      </label>
+                    </div>
+                    <label className="block space-y-2">
+                      <span className="text-sm font-medium">
+                        <I18nText text={'Client secret'} />
+                      </span>
+                      <I18nProps>
+                        <Input
+                          type="password"
+                          value={smtpDraft.clientSecret}
+                          placeholder={
+                            smtpDraft.clientSecretConfigured
+                              ? 'Client secret configured'
+                              : 'Client secret'
+                          }
+                          onChange={(event) =>
+                            setSMTPDraft((current) => ({
+                              ...current,
+                              clientSecret: event.target.value,
+                            }))
+                          }
+                        />
+                      </I18nProps>
+                    </label>
+                  </>
+                )}
+              {smtpDraft.mode === 'oauth' &&
+                smtpDraft.oauthProvider ===
+                  NotificationSMTPOAuthProvider.google_service_account && (
+                  <I18nProps>
+                    <Textarea
+                      value={smtpDraft.serviceAccountJson}
+                      placeholder={
+                        smtpDraft.serviceAccountJsonConfigured
+                          ? 'Service-account JSON configured'
+                          : 'Service-account JSON'
+                      }
+                      onChange={(event) =>
+                        setSMTPDraft((current) => ({
+                          ...current,
+                          serviceAccountJson: event.target.value,
+                        }))
+                      }
+                    />
+                  </I18nProps>
+                )}
+              {smtpDraft.mode === 'oauth' &&
+                smtpDraft.oauthProvider ===
+                  NotificationSMTPOAuthProvider.google_refresh && (
+                  <>
+                    <label className="block space-y-2">
+                      <span className="text-sm font-medium">
+                        <I18nText text={'Client ID'} />
+                      </span>
+                      <I18nProps>
+                        <Input
+                          value={smtpDraft.clientId}
+                          placeholder="Google OAuth client ID"
+                          onChange={(event) => {
+                            const clientId = event.target.value;
+                            setSMTPDraft((current) =>
+                              resetOAuthSecretState({ ...current, clientId })
+                            );
+                          }}
+                        />
+                      </I18nProps>
+                    </label>
+                    <label className="block space-y-2">
+                      <span className="text-sm font-medium">
+                        <I18nText text={'Client secret'} />
+                      </span>
+                      <I18nProps>
+                        <Input
+                          type="password"
+                          value={smtpDraft.clientSecret}
+                          placeholder={
+                            smtpDraft.clientSecretConfigured
+                              ? 'Client secret configured'
+                              : 'Client secret'
+                          }
+                          onChange={(event) =>
+                            setSMTPDraft((current) => ({
+                              ...current,
+                              clientSecret: event.target.value,
+                            }))
+                          }
+                        />
+                      </I18nProps>
+                    </label>
+                    <label className="block space-y-2">
+                      <span className="text-sm font-medium">
+                        <I18nText text={'Refresh token'} />
+                      </span>
+                      <I18nProps>
+                        <Input
+                          type="password"
+                          value={smtpDraft.refreshToken}
+                          placeholder={
+                            smtpDraft.refreshTokenConfigured
+                              ? 'Refresh token configured'
+                              : 'Refresh token'
+                          }
+                          onChange={(event) =>
+                            setSMTPDraft((current) => ({
+                              ...current,
+                              refreshToken: event.target.value,
+                            }))
+                          }
+                        />
+                      </I18nProps>
+                    </label>
+                    <p className="text-xs text-muted-foreground">
+                      <I18nText
+                        text={
+                          'The refresh token must have been granted with offline access and the https://mail.google.com/ scope.'
+                        }
+                      />
+                    </p>
+                  </>
+                )}
+            </fieldset>
+            <DialogFooter className="gap-2 border-t border-border px-6 py-4">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 text-base"
+                disabled={isSavingSettings}
+                onClick={() => setSettingsOpen(false)}
+              >
+                <I18nText text={'Cancel'} />
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                className="h-11 text-base"
+                disabled={isSavingSettings}
+              >
+                {isSavingSettings && (
+                  <Loader2 className="size-4 animate-spin" />
+                )}
+                <I18nText text={'Save changes'} />
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

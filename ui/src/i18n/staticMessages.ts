@@ -4,6 +4,32 @@
 import type { Locale } from '@/contexts/UserPreference';
 
 const english = {
+  'Incoming webhook': 'Incoming webhook',
+  'Bot destination': 'Bot destination',
+  'Webhook destination': 'Webhook destination',
+  'Channel actions for {channel}': 'Channel actions for {channel}',
+  'Delete channel': 'Delete channel',
+  '{count} channel': '{count} channel',
+  '{count} channels': '{count} channels',
+  'Create reusable destinations, then choose events in Rules.':
+    'Create reusable destinations, then choose events in Rules.',
+  'View rules': 'View rules',
+  'Search channels': 'Search channels',
+  'No matching channels': 'No matching channels',
+  'Try a different name or provider.': 'Try a different name or provider.',
+  'Add a channel to create your first notification destination.':
+    'Add a channel to create your first notification destination.',
+  'Edit channel': 'Edit channel',
+  'Save a destination, then use it in notification rules.':
+    'Save a destination, then use it in notification rules.',
+  'Create channel': 'Create channel',
+  'Email delivery': 'Email delivery',
+  'Shared sender for email channels.': 'Shared sender for email channels.',
+  'Configure email delivery before testing an email channel.':
+    'Configure email delivery before testing an email channel.',
+  'Adding a channel does not send notifications. Set up a rule to start delivery.':
+    'Adding a channel does not send notifications. Set up a rule to start delivery.',
+  'Go to Rules': 'Go to Rules',
   'Choose where workflow updates go and when they are sent.':
     'Choose where workflow updates go and when they are sent.',
   'Applies to': 'Applies to',
@@ -2187,6 +2213,32 @@ export type StaticMessage = keyof typeof english;
 export type StaticTranslationValues = Record<string, string | number>;
 
 const chinese = {
+  'Incoming webhook': '传入 Webhook',
+  'Bot destination': '机器人通知目标',
+  'Webhook destination': 'Webhook 通知目标',
+  'Channel actions for {channel}': '{channel} 的通道操作',
+  'Delete channel': '删除通道',
+  '{count} channel': '{count} 个通道',
+  '{count} channels': '{count} 个通道',
+  'Create reusable destinations, then choose events in Rules.':
+    '创建可复用的通知目标，然后在“规则”中选择事件。',
+  'View rules': '查看规则',
+  'Search channels': '搜索通道',
+  'No matching channels': '没有匹配的通道',
+  'Try a different name or provider.': '请尝试其他名称或提供商。',
+  'Add a channel to create your first notification destination.':
+    '添加通道以创建第一个通知目标。',
+  'Edit channel': '编辑通道',
+  'Save a destination, then use it in notification rules.':
+    '保存通知目标，然后在通知规则中使用。',
+  'Create channel': '创建通道',
+  'Email delivery': '邮件发送',
+  'Shared sender for email channels.': '邮件通道共用的发件设置。',
+  'Configure email delivery before testing an email channel.':
+    '测试邮件通道前，请先配置邮件发送。',
+  'Adding a channel does not send notifications. Set up a rule to start delivery.':
+    '添加通道不会发送通知。请设置规则以开始发送。',
+  'Go to Rules': '前往规则',
   'Choose where workflow updates go and when they are sent.':
     '选择工作流通知的发送目标和触发时机。',
   'Applies to': '适用范围',
@@ -4310,6 +4362,33 @@ const chinese = {
 } as const satisfies Record<StaticMessage, string>;
 
 const japanese = {
+  'Incoming webhook': '受信用 Webhook',
+  'Bot destination': 'Bot の通知先',
+  'Webhook destination': 'Webhook の通知先',
+  'Channel actions for {channel}': '{channel} のチャネル操作',
+  'Delete channel': 'チャネルを削除',
+  '{count} channel': '{count} 個のチャネル',
+  '{count} channels': '{count} 個のチャネル',
+  'Create reusable destinations, then choose events in Rules.':
+    '再利用できる通知先を作成し、「ルール」でイベントを選択します。',
+  'View rules': 'ルールを表示',
+  'Search channels': 'チャネルを検索',
+  'No matching channels': '一致するチャネルがありません',
+  'Try a different name or provider.':
+    '別の名前またはプロバイダーで検索してください。',
+  'Add a channel to create your first notification destination.':
+    'チャネルを追加して、最初の通知先を作成してください。',
+  'Edit channel': 'チャネルを編集',
+  'Save a destination, then use it in notification rules.':
+    '通知先を保存すると、通知ルールで使用できます。',
+  'Create channel': 'チャネルを作成',
+  'Email delivery': 'メール配信',
+  'Shared sender for email channels.': 'メールチャネルで共有する送信設定です。',
+  'Configure email delivery before testing an email channel.':
+    'メールチャネルをテストする前に、メール配信を設定してください。',
+  'Adding a channel does not send notifications. Set up a rule to start delivery.':
+    'チャネルの追加だけでは通知は送信されません。配信を開始するにはルールを設定してください。',
+  'Go to Rules': 'ルールへ',
   'Choose where workflow updates go and when they are sent.':
     'ワークフローの通知先と通知するタイミングを設定します。',
   'Applies to': '適用範囲',

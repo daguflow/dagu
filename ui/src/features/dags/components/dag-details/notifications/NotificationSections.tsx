@@ -1,19 +1,36 @@
 import {
   AlertTriangle,
+  ArrowRight,
+  MoreHorizontal,
+  Search,
   Bell,
   CheckCircle2,
   FlaskConical,
   Link2,
   Loader2,
   Plus,
-  Save,
   Settings,
   Trash2,
   XCircle,
 } from 'lucide-react';
-import { useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
+import ConfirmDialog from '@/components/ui/confirm-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -34,6 +51,7 @@ import {
   NotificationProviderType,
 } from '../../../../../api/v1/schema';
 import {
+  blankChannel,
   DEFAULT_MESSAGE_TEMPLATE,
   DEFAULT_SUBJECT_TEMPLATE,
   DeliveryDraft,
@@ -71,79 +89,117 @@ function ProviderFields({ draft, onChange }: ProviderFieldsProps) {
   if (draft.type === NotificationProviderType.email) {
     return (
       <div className="grid gap-3 md:grid-cols-2">
-        <I18nProps>
-          <Input
-            value={draft.email.to}
-            placeholder="To"
-            onChange={(event) =>
-              update({ email: { ...draft.email, to: event.target.value } })
-            }
-          />
-        </I18nProps>
-        <I18nProps>
-          <Input
-            value={draft.email.from}
-            placeholder="From"
-            onChange={(event) =>
-              update({ email: { ...draft.email, from: event.target.value } })
-            }
-          />
-        </I18nProps>
-        <I18nProps>
-          <Input
-            value={draft.email.cc}
-            placeholder="Cc"
-            onChange={(event) =>
-              update({ email: { ...draft.email, cc: event.target.value } })
-            }
-          />
-        </I18nProps>
-        <I18nProps>
-          <Input
-            value={draft.email.bcc}
-            placeholder="Bcc"
-            onChange={(event) =>
-              update({ email: { ...draft.email, bcc: event.target.value } })
-            }
-          />
-        </I18nProps>
-        <I18nProps>
-          <Input
-            value={draft.email.subjectPrefix}
-            placeholder="Subject prefix"
-            onChange={(event) =>
-              update({
-                email: { ...draft.email, subjectPrefix: event.target.value },
-              })
-            }
-          />
-        </I18nProps>
-        <I18nProps>
-          <Textarea
-            className="md:col-span-2"
-            aria-label="Email subject template"
-            value={draft.email.subjectTemplate}
-            placeholder={DEFAULT_SUBJECT_TEMPLATE}
-            onChange={(event) =>
-              update({
-                email: { ...draft.email, subjectTemplate: event.target.value },
-              })
-            }
-          />
-        </I18nProps>
-        <I18nProps>
-          <Textarea
-            className="min-h-24 py-1 md:col-span-2"
-            aria-label="Email body template"
-            value={draft.email.bodyTemplate}
-            placeholder={DEFAULT_MESSAGE_TEMPLATE}
-            onChange={(event) =>
-              update({
-                email: { ...draft.email, bodyTemplate: event.target.value },
-              })
-            }
-          />
-        </I18nProps>
+        <label className="block space-y-2">
+          <span className="text-sm font-medium">
+            <I18nText text={'To'} />
+          </span>
+          <I18nProps>
+            <Input
+              value={draft.email.to}
+              placeholder="To"
+              onChange={(event) =>
+                update({ email: { ...draft.email, to: event.target.value } })
+              }
+            />
+          </I18nProps>
+        </label>
+        <label className="block space-y-2">
+          <span className="text-sm font-medium">
+            <I18nText text={'From'} />
+          </span>
+          <I18nProps>
+            <Input
+              value={draft.email.from}
+              placeholder="From"
+              onChange={(event) =>
+                update({ email: { ...draft.email, from: event.target.value } })
+              }
+            />
+          </I18nProps>
+        </label>
+        <label className="block space-y-2">
+          <span className="text-sm font-medium">
+            <I18nText text={'Cc'} />
+          </span>
+          <I18nProps>
+            <Input
+              value={draft.email.cc}
+              placeholder="Cc"
+              onChange={(event) =>
+                update({ email: { ...draft.email, cc: event.target.value } })
+              }
+            />
+          </I18nProps>
+        </label>
+        <label className="block space-y-2">
+          <span className="text-sm font-medium">
+            <I18nText text={'Bcc'} />
+          </span>
+          <I18nProps>
+            <Input
+              value={draft.email.bcc}
+              placeholder="Bcc"
+              onChange={(event) =>
+                update({ email: { ...draft.email, bcc: event.target.value } })
+              }
+            />
+          </I18nProps>
+        </label>
+        <label className="block space-y-2">
+          <span className="text-sm font-medium">
+            <I18nText text={'Subject prefix'} />
+          </span>
+          <I18nProps>
+            <Input
+              value={draft.email.subjectPrefix}
+              placeholder="Subject prefix"
+              onChange={(event) =>
+                update({
+                  email: { ...draft.email, subjectPrefix: event.target.value },
+                })
+              }
+            />
+          </I18nProps>
+        </label>
+        <label className="block space-y-2 md:col-span-2">
+          <span className="text-sm font-medium">
+            <I18nText text={'Email subject template'} />
+          </span>
+          <I18nProps>
+            <Textarea
+              className="md:col-span-2"
+              aria-label="Email subject template"
+              value={draft.email.subjectTemplate}
+              placeholder={DEFAULT_SUBJECT_TEMPLATE}
+              onChange={(event) =>
+                update({
+                  email: {
+                    ...draft.email,
+                    subjectTemplate: event.target.value,
+                  },
+                })
+              }
+            />
+          </I18nProps>
+        </label>
+        <label className="block space-y-2 md:col-span-2">
+          <span className="text-sm font-medium">
+            <I18nText text={'Email body template'} />
+          </span>
+          <I18nProps>
+            <Textarea
+              className="min-h-24 py-1 md:col-span-2"
+              aria-label="Email body template"
+              value={draft.email.bodyTemplate}
+              placeholder={DEFAULT_MESSAGE_TEMPLATE}
+              onChange={(event) =>
+                update({
+                  email: { ...draft.email, bodyTemplate: event.target.value },
+                })
+              }
+            />
+          </I18nProps>
+        </label>
         <label className="flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm">
           <Checkbox
             checked={draft.email.attachLogs}
@@ -207,31 +263,43 @@ function ProviderFields({ draft, onChange }: ProviderFieldsProps) {
               )}
             </div>
           )}
-        <I18nProps>
-          <Textarea
-            value={draft.webhook.headers}
-            placeholder="Header-Name: value"
-            onChange={(event) =>
-              update({
-                webhook: { ...draft.webhook, headers: event.target.value },
-              })
-            }
-          />
-        </I18nProps>
-        <Input
-          type="password"
-          value={draft.webhook.hmacSecret}
-          placeholder={
-            draft.webhook.hmacSecretConfigured
-              ? ts('HMAC secret configured')
-              : ts('HMAC secret')
-          }
-          onChange={(event) =>
-            update({
-              webhook: { ...draft.webhook, hmacSecret: event.target.value },
-            })
-          }
-        />
+        <label className="block space-y-2">
+          <span className="text-sm font-medium">
+            <I18nText text={'Headers'} />
+          </span>
+          <I18nProps>
+            <Textarea
+              value={draft.webhook.headers}
+              placeholder="Header-Name: value"
+              onChange={(event) =>
+                update({
+                  webhook: { ...draft.webhook, headers: event.target.value },
+                })
+              }
+            />
+          </I18nProps>
+        </label>
+        <label className="block space-y-2">
+          <span className="text-sm font-medium">
+            <I18nText text={'HMAC secret'} />
+          </span>
+          <I18nProps>
+            <Input
+              type="password"
+              value={draft.webhook.hmacSecret}
+              placeholder={
+                draft.webhook.hmacSecretConfigured
+                  ? ts('HMAC secret configured')
+                  : ts('HMAC secret')
+              }
+              onChange={(event) =>
+                update({
+                  webhook: { ...draft.webhook, hmacSecret: event.target.value },
+                })
+              }
+            />
+          </I18nProps>
+        </label>
         <div className="space-y-2">
           <Label htmlFor={`${fieldId}-webhook-message-template`}>
             <I18nText text={'Webhook message template'} />
@@ -351,38 +419,50 @@ function ProviderFields({ draft, onChange }: ProviderFieldsProps) {
   if (draft.type === NotificationProviderType.slack) {
     return (
       <div className="space-y-3">
-        <Input
-          type="password"
-          value={draft.slack.webhookUrl}
-          placeholder={
-            draft.slack.webhookUrlConfigured
-              ? ts('Webhook URL configured ({preview})', {
-                  preview: draft.slack.webhookUrlPreview || ts('saved'),
+        <label className="block space-y-2">
+          <span className="text-sm font-medium">
+            <I18nText text={'Slack webhook URL'} />
+          </span>
+          <I18nProps>
+            <Input
+              type="password"
+              value={draft.slack.webhookUrl}
+              placeholder={
+                draft.slack.webhookUrlConfigured
+                  ? ts('Webhook URL configured ({preview})', {
+                      preview: draft.slack.webhookUrlPreview || ts('saved'),
+                    })
+                  : ts('Slack webhook URL')
+              }
+              onChange={(event) =>
+                update({
+                  slack: { ...draft.slack, webhookUrl: event.target.value },
                 })
-              : ts('Slack webhook URL')
-          }
-          onChange={(event) =>
-            update({
-              slack: { ...draft.slack, webhookUrl: event.target.value },
-            })
-          }
-        />
-        <I18nProps>
-          <Textarea
-            className="min-h-24 py-1"
-            aria-label="Slack message template"
-            value={draft.slack.messageTemplate}
-            placeholder={DEFAULT_MESSAGE_TEMPLATE}
-            onChange={(event) =>
-              update({
-                slack: {
-                  ...draft.slack,
-                  messageTemplate: event.target.value,
-                },
-              })
-            }
-          />
-        </I18nProps>
+              }
+            />
+          </I18nProps>
+        </label>
+        <label className="block space-y-2">
+          <span className="text-sm font-medium">
+            <I18nText text={'Slack message template'} />
+          </span>
+          <I18nProps>
+            <Textarea
+              className="min-h-24 py-1"
+              aria-label="Slack message template"
+              value={draft.slack.messageTemplate}
+              placeholder={DEFAULT_MESSAGE_TEMPLATE}
+              onChange={(event) =>
+                update({
+                  slack: {
+                    ...draft.slack,
+                    messageTemplate: event.target.value,
+                  },
+                })
+              }
+            />
+          </I18nProps>
+        </label>
       </div>
     );
   }
@@ -472,62 +552,84 @@ function ProviderFields({ draft, onChange }: ProviderFieldsProps) {
   return (
     <div className="space-y-3">
       <div className="grid gap-3 md:grid-cols-2">
-        <Input
-          type="password"
-          value={draft.telegram.botToken}
-          placeholder={
-            draft.telegram.botTokenConfigured
-              ? ts('Bot token configured ({preview})', {
-                  preview: draft.telegram.botTokenPreview || ts('saved'),
+        <label className="block space-y-2">
+          <span className="text-sm font-medium">
+            <I18nText text={'Bot token'} />
+          </span>
+          <I18nProps>
+            <Input
+              type="password"
+              value={draft.telegram.botToken}
+              placeholder={
+                draft.telegram.botTokenConfigured
+                  ? ts('Bot token configured ({preview})', {
+                      preview: draft.telegram.botTokenPreview || ts('saved'),
+                    })
+                  : ts('Bot token')
+              }
+              onChange={(event) =>
+                update({
+                  telegram: { ...draft.telegram, botToken: event.target.value },
                 })
-              : ts('Bot token')
-          }
-          onChange={(event) =>
-            update({
-              telegram: { ...draft.telegram, botToken: event.target.value },
-            })
-          }
-        />
+              }
+            />
+          </I18nProps>
+        </label>
+        <label className="block space-y-2">
+          <span className="text-sm font-medium">
+            <I18nText text={'Chat ID'} />
+          </span>
+          <I18nProps>
+            <Input
+              value={draft.telegram.chatId}
+              placeholder="Chat ID"
+              onChange={(event) =>
+                update({
+                  telegram: { ...draft.telegram, chatId: event.target.value },
+                })
+              }
+            />
+          </I18nProps>
+        </label>
+      </div>
+      <label className="block space-y-2">
+        <span className="text-sm font-medium">
+          <I18nText text={'Telegram topic ID'} />
+        </span>
         <I18nProps>
           <Input
-            value={draft.telegram.chatId}
-            placeholder="Chat ID"
+            aria-label="Telegram topic ID"
+            value={draft.telegram.topicId}
+            placeholder="Topic ID (optional, for forum groups)"
             onChange={(event) =>
               update({
-                telegram: { ...draft.telegram, chatId: event.target.value },
+                telegram: { ...draft.telegram, topicId: event.target.value },
               })
             }
           />
         </I18nProps>
-      </div>
-      <I18nProps>
-        <Input
-          aria-label="Telegram topic ID"
-          value={draft.telegram.topicId}
-          placeholder="Topic ID (optional, for forum groups)"
-          onChange={(event) =>
-            update({
-              telegram: { ...draft.telegram, topicId: event.target.value },
-            })
-          }
-        />
-      </I18nProps>
-      <I18nProps>
-        <Textarea
-          className="min-h-24 py-1"
-          aria-label="Telegram message template"
-          value={draft.telegram.messageTemplate}
-          placeholder={DEFAULT_MESSAGE_TEMPLATE}
-          onChange={(event) =>
-            update({
-              telegram: {
-                ...draft.telegram,
-                messageTemplate: event.target.value,
-              },
-            })
-          }
-        />
-      </I18nProps>
+      </label>
+      <label className="block space-y-2">
+        <span className="text-sm font-medium">
+          <I18nText text={'Telegram message template'} />
+        </span>
+        <I18nProps>
+          <Textarea
+            className="min-h-24 py-1"
+            aria-label="Telegram message template"
+            value={draft.telegram.messageTemplate}
+            placeholder={DEFAULT_MESSAGE_TEMPLATE}
+            onChange={(event) =>
+              update({
+                telegram: {
+                  ...draft.telegram,
+                  messageTemplate: event.target.value,
+                },
+              })
+            }
+          />
+        </I18nProps>
+      </label>
     </div>
   );
 }
@@ -863,132 +965,402 @@ export function InheritedNotificationRoutesCard({
 
 type NotificationChannelsSectionProps = {
   channels: DraftChannel[];
-  savingChannelIndex: number | null;
-  onAdd: () => void;
-  onUpdate: (
-    index: number,
-    updater: (channel: DraftChannel) => DraftChannel
-  ) => void;
-  onSave: (index: number) => void;
-  onDelete: (index: number) => void;
+  onSave: (channel: DraftChannel) => Promise<void>;
+  onDelete: (channel: DraftChannel) => Promise<void>;
+  onTest: (channelId: string) => Promise<TestResult | undefined>;
 };
+
+function channelDestination(channel: DraftChannel): string {
+  switch (channel.type) {
+    case NotificationProviderType.email:
+      return channel.email.to;
+    case NotificationProviderType.slack:
+    case NotificationProviderType.teams:
+      return 'Incoming webhook';
+    case NotificationProviderType.telegram:
+      return 'Bot destination';
+    case NotificationProviderType.webhook:
+      try {
+        return new URL(channel.webhook.urlPreview || '').hostname;
+      } catch {
+        return 'Webhook destination';
+      }
+  }
+}
+
+function ChannelListRow({
+  channel,
+  onEdit,
+  onDelete,
+  onSave,
+  onTest,
+}: {
+  channel: DraftChannel;
+  onEdit: () => void;
+  onDelete: () => void;
+  onSave: NotificationChannelsSectionProps['onSave'];
+  onTest: NotificationChannelsSectionProps['onTest'];
+}) {
+  const { ts } = useI18n();
+  const Icon = providerIcon(channel.type);
+  const label = deliveryLabel(channel);
+  const [pending, setPending] = useState<'toggle' | 'test' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [delivered, setDelivered] = useState(false);
+  useEffect(() => {
+    setDelivered(false);
+    setError(null);
+  }, [channel]);
+
+  const toggle = async (enabled: boolean) => {
+    setPending('toggle');
+    setError(null);
+    try {
+      await onSave({ ...channel, enabled });
+    } catch (error) {
+      setError(
+        error instanceof Error ? error.message : ts('Failed to save channel')
+      );
+    } finally {
+      setPending(null);
+    }
+  };
+  const test = async () => {
+    setPending('test');
+    setError(null);
+    setDelivered(false);
+    try {
+      const result = await onTest(channel.id!);
+      if (!result?.delivered) {
+        throw new Error(result?.error || ts('Delivery failed'));
+      }
+      setDelivered(true);
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : ts('Failed to send test notification')
+      );
+    } finally {
+      setPending(null);
+    }
+  };
+
+  return (
+    <li
+      aria-label={label}
+      className="flex min-h-28 flex-col gap-4 px-5 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between"
+    >
+      <div className="flex min-w-0 items-start gap-4">
+        <span className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-muted text-primary">
+          <Icon className="size-6" />
+        </span>
+        <div className="min-w-0 space-y-1">
+          <h3 className="break-words text-lg font-medium">{label}</h3>
+          <p className="break-words text-base text-muted-foreground">
+            <I18nText text={providerLabel(channel.type)} /> ·{' '}
+            <I18nText text={channelDestination(channel)} />
+          </p>
+          {delivered && (
+            <p
+              role="status"
+              className="flex items-center gap-2 text-sm text-success"
+            >
+              <CheckCircle2 className="size-4" />
+              <I18nText text={'Test delivered'} />
+            </p>
+          )}
+          {error && (
+            <p role="alert" className="break-words text-sm text-destructive">
+              {error}
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-3 sm:gap-4">
+        <label className="flex min-h-11 items-center gap-3 text-base text-muted-foreground">
+          <I18nText text={channel.enabled ? 'Enabled' : 'Disabled'} />
+          <Switch
+            checked={channel.enabled}
+            disabled={pending !== null}
+            onCheckedChange={toggle}
+            aria-label={ts('Toggle {title}', { title: label })}
+          />
+          {pending === 'toggle' && <Loader2 className="size-4 animate-spin" />}
+        </label>
+        <Button
+          variant="outline"
+          className="h-11 px-5 text-base"
+          disabled={pending !== null}
+          onClick={test}
+        >
+          {pending === 'test' && <Loader2 className="size-4 animate-spin" />}
+          <I18nText text={pending === 'test' ? 'Sending...' : 'Test'} />
+        </Button>
+        <Button
+          variant="outline"
+          className="h-11 px-5 text-base"
+          disabled={pending !== null}
+          onClick={onEdit}
+        >
+          <I18nText text={'Edit'} />
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-11"
+              disabled={pending !== null}
+              aria-label={ts('Channel actions for {channel}', {
+                channel: label,
+              })}
+            >
+              <MoreHorizontal className="size-5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onSelect={onDelete}
+              className="gap-2 text-destructive"
+            >
+              <Trash2 className="size-4" />
+              <I18nText text={'Delete channel'} />
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </li>
+  );
+}
 
 export function NotificationChannelsSection({
   channels,
-  savingChannelIndex,
-  onAdd,
-  onUpdate,
   onSave,
   onDelete,
+  onTest,
 }: NotificationChannelsSectionProps) {
-  return (
-    <>
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-foreground">
-          <I18nText text={'Notification Channels'} />
-        </h3>
-        <Button variant="outline" size="sm" onClick={onAdd}>
-          <Plus className="h-4 w-4" />
-          <I18nText text={'Add'} />
-        </Button>
-      </div>
+  const { ts } = useI18n();
+  const fieldId = useId();
+  const [search, setSearch] = useState('');
+  const [editor, setEditor] = useState<DraftChannel | null>(null);
+  const [deleting, setDeleting] = useState<DraftChannel | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const query = search.trim().toLocaleLowerCase();
+  const filteredChannels = channels.filter((channel) =>
+    [
+      deliveryLabel(channel),
+      ts(providerLabel(channel.type)),
+      ts(channelDestination(channel)),
+    ].some((value) => value.toLocaleLowerCase().includes(query))
+  );
+  const edit = (channel: DraftChannel) => {
+    setError(null);
+    setEditor(channel);
+  };
+  const save = async () => {
+    if (!editor) {
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave(editor);
+      setEditor(null);
+      setSearch('');
+    } catch (error) {
+      setError(
+        error instanceof Error ? error.message : ts('Failed to save channel')
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+  const remove = async () => {
+    if (!deleting) {
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await onDelete(deleting);
+      setDeleting(null);
+    } catch (error) {
+      setError(
+        error instanceof Error ? error.message : ts('Failed to delete channel')
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
 
-      {channels.length === 0 ? (
-        <Card>
-          <CardContent className="py-8 text-sm text-muted-foreground">
-            <I18nText text={'No channels configured.'} />
-          </CardContent>
-        </Card>
+  return (
+    <section className="space-y-4" aria-label={ts('Notification Channels')}>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-semibold">
+              <I18nText text={'Channels'} />
+            </h2>
+            <span className="text-base text-muted-foreground">
+              {ts(
+                channels.length === 1 ? '{count} channel' : '{count} channels',
+                { count: channels.length }
+              )}
+            </span>
+          </div>
+          <p className="text-base text-muted-foreground">
+            <I18nText
+              text={
+                'Create reusable destinations, then choose events in Rules.'
+              }
+            />
+          </p>
+        </div>
+        <div className="flex items-center gap-4 sm:flex-col sm:items-end">
+          <Button
+            variant="primary"
+            className="h-11 px-4 text-base"
+            onClick={() => edit(blankChannel(NotificationProviderType.slack))}
+          >
+            <Plus className="size-4" />
+            <I18nText text={'Add channel'} />
+          </Button>
+          <Link
+            to="/notification-rules"
+            className="inline-flex items-center gap-2 text-base text-primary hover:underline"
+          >
+            <I18nText text={'View rules'} />
+            <ArrowRight className="size-4" />
+          </Link>
+        </div>
+      </div>
+      <div className="relative max-w-sm">
+        <Search className="pointer-events-none absolute left-3 top-3.5 size-4 text-muted-foreground" />
+        <Input
+          type="search"
+          aria-label={ts('Search channels')}
+          placeholder={ts('Search channels')}
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          className="h-11 pl-10 text-base"
+        />
+      </div>
+      {filteredChannels.length ? (
+        <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+          {filteredChannels.map((channel) => (
+            <ChannelListRow
+              key={channel.id}
+              channel={channel}
+              onSave={onSave}
+              onTest={onTest}
+              onEdit={() => edit(channel)}
+              onDelete={() => {
+                setError(null);
+                setDeleting(channel);
+              }}
+            />
+          ))}
+        </ul>
       ) : (
-        <div className="space-y-3">
-          {channels.map((channel, index) => {
-            const Icon = providerIcon(channel.type);
-            return (
-              <Card key={channel.id || `new-${index}`}>
-                <CardHeader className="grid-cols-[1fr_auto]">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <CardTitle className="truncate text-sm">
-                      {deliveryLabel(channel)}
-                    </CardTitle>
-                    <Badge variant={channel.enabled ? 'success' : 'default'}>
-                      {channel.enabled ? (
-                        <I18nText text={'Enabled'} />
-                      ) : (
-                        <I18nText text={'Disabled'} />
-                      )}
-                    </Badge>
-                    {!channel.id && (
-                      <Badge variant="warning">
-                        <I18nText text={'New'} />
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      checked={channel.enabled}
-                      onCheckedChange={(enabled) =>
-                        onUpdate(index, (current) => ({
-                          ...current,
-                          enabled,
-                        }))
+        <div className="rounded-lg border border-dashed border-border-strong px-6 py-10 text-center">
+          <Bell className="mx-auto mb-3 size-7 text-muted-foreground" />
+          <p className="text-base font-medium">
+            <I18nText
+              text={
+                channels.length
+                  ? 'No matching channels'
+                  : 'No channels configured.'
+              }
+            />
+          </p>
+          <p className="mt-2 text-base text-muted-foreground">
+            <I18nText
+              text={
+                channels.length
+                  ? 'Try a different name or provider.'
+                  : 'Add a channel to create your first notification destination.'
+              }
+            />
+          </p>
+        </div>
+      )}
+      <Dialog
+        open={editor !== null}
+        onOpenChange={(open) => {
+          if (!open && !saving) {
+            setEditor(null);
+          }
+        }}
+      >
+        <DialogContent
+          className="flex max-h-[90dvh] w-[calc(100%-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0"
+          onInteractOutside={(event) => event.preventDefault()}
+        >
+          <DialogHeader className="border-b border-border px-6 py-5 pr-12">
+            <DialogTitle>
+              <I18nText text={editor?.id ? 'Edit channel' : 'Add channel'} />
+            </DialogTitle>
+            <DialogDescription>
+              <I18nText
+                text={'Save a destination, then use it in notification rules.'}
+              />
+            </DialogDescription>
+          </DialogHeader>
+          {editor && (
+            <form
+              className="flex min-h-0 flex-col"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void save();
+              }}
+            >
+              <fieldset
+                disabled={saving}
+                className="min-h-0 space-y-5 overflow-y-auto p-6 [&_input]:h-11 [&_input]:text-base [&_textarea]:text-base"
+              >
+                {error && (
+                  <p role="alert" className="text-base text-destructive">
+                    {error}
+                  </p>
+                )}
+                <div className="grid gap-4 sm:grid-cols-[1fr_180px]">
+                  <div className="space-y-2">
+                    <Label htmlFor={`${fieldId}-name`}>
+                      <I18nText text={'Channel name'} />
+                    </Label>
+                    <Input
+                      id={`${fieldId}-name`}
+                      required
+                      value={editor.name}
+                      onChange={(event) =>
+                        setEditor({ ...editor, name: event.target.value })
                       }
-                      aria-label={`Toggle ${deliveryLabel(channel)}`}
+                      className="h-11"
                     />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onSave(index)}
-                      disabled={savingChannelIndex !== null}
-                    >
-                      {savingChannelIndex === index ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Save className="h-4 w-4" />
-                      )}
-                      <I18nText text={'Save'} />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onDelete(index)}
-                      aria-label={`Delete ${deliveryLabel(channel)}`}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
                   </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
-                    <I18nProps>
-                      <Input
-                        value={channel.name}
-                        placeholder="Channel name"
-                        onChange={(event) =>
-                          onUpdate(index, (current) => ({
-                            ...current,
-                            name: event.target.value,
-                          }))
-                        }
-                      />
-                    </I18nProps>
+                  <div className="space-y-2">
+                    <Label htmlFor={`${fieldId}-provider`}>
+                      <I18nText text={'Provider'} />
+                    </Label>
                     <Select
-                      value={channel.type}
+                      value={editor.type}
+                      disabled={saving}
                       onValueChange={(value) =>
-                        onUpdate(index, (current) => {
-                          const nextType = value as NotificationProviderType;
-                          const next = replaceDeliveryProvider(
-                            current,
-                            nextType
-                          );
-                          return {
-                            ...next,
-                            id: current.id,
-                          };
+                        setEditor({
+                          ...replaceDeliveryProvider(
+                            editor,
+                            value as NotificationProviderType
+                          ),
+                          id: editor.id,
                         })
                       }
                     >
-                      <SelectTrigger>
+                      <SelectTrigger
+                        id={`${fieldId}-provider`}
+                        className="h-11 text-base"
+                      >
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -997,28 +1369,78 @@ export function NotificationChannelsSection({
                             key={provider.value}
                             value={provider.value}
                           >
-                            {provider.label}
+                            <I18nText text={provider.label} />
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-                  <ProviderFields
-                    draft={channel}
-                    onChange={(next) =>
-                      onUpdate(index, () => ({
-                        ...next,
-                        id: channel.id,
-                      }))
+                </div>
+                <ProviderFields
+                  draft={editor}
+                  onChange={(next) => setEditor({ ...next, id: editor.id })}
+                />
+                <label className="flex min-h-11 items-center gap-3 text-base">
+                  <Switch
+                    checked={editor.enabled}
+                    disabled={saving}
+                    onCheckedChange={(enabled) =>
+                      setEditor({ ...editor, enabled })
                     }
                   />
-                </CardContent>
-              </Card>
-            );
+                  <I18nText text={'Enabled'} />
+                </label>
+              </fieldset>
+              <DialogFooter className="gap-2 border-t border-border px-6 py-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={saving}
+                  onClick={() => setEditor(null)}
+                  className="h-11 text-base"
+                >
+                  <I18nText text={'Cancel'} />
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={saving || !editor.name.trim()}
+                  className="h-11 text-base"
+                >
+                  {saving && <Loader2 className="size-4 animate-spin" />}
+                  <I18nText
+                    text={editor.id ? 'Save changes' : 'Create channel'}
+                  />
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+      <ConfirmDialog
+        title={ts('Delete channel')}
+        buttonText={ts('Delete')}
+        visible={deleting !== null}
+        dismissModal={() => {
+          if (!saving) {
+            setDeleting(null);
+          }
+        }}
+        onSubmit={remove}
+        submitDisabled={saving}
+      >
+        <p className="break-words text-base">
+          {ts('Delete {channel}?', {
+            channel: deleting ? deliveryLabel(deleting) : '',
           })}
-        </div>
-      )}
-    </>
+        </p>
+        {error && (
+          <p role="alert" className="mt-3 text-base text-destructive">
+            {error}
+          </p>
+        )}
+      </ConfirmDialog>
+    </section>
   );
 }
 
