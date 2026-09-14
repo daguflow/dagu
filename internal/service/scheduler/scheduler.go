@@ -137,17 +137,13 @@ type startupState struct {
 
 // New constructs a Scheduler from its configuration and dependencies.
 func New(cfg *config.Config, deps Dependencies) (*Scheduler, error) {
-	entryReader := deps.EntryReader
-	if entryReader == nil && deps.DAGRepository != nil {
-		entryReader = NewFileEntryReader(cfg.Paths.DAGsDir, deps.DAGRepository, cfg.DAGDiscovery.Recursive)
-	}
 	var profileResolver DAGProfileResolver
 	if deps.DAGSettingsStore != nil {
 		profileResolver = NewDAGProfileResolver(deps.DAGSettingsStore, deps.ProfileStore)
 	}
 	scheduler, err := newScheduler(
 		cfg,
-		entryReader,
+		deps.EntryReader,
 		deps.DAGRunManager,
 		deps.DAGRepository,
 		deps.DAGRunRepository,
@@ -198,6 +194,9 @@ func newScheduler(
 	}
 	if dagRunRepository == nil {
 		return nil, fmt.Errorf("DAG-run repository is required")
+	}
+	if er == nil {
+		return nil, fmt.Errorf("DAG entry reader is required")
 	}
 	timeLoc := cfg.Core.Location
 	if timeLoc == nil {

@@ -5,16 +5,16 @@ package scheduler_test
 
 import (
 	"context"
+	filedag "github.com/dagucloud/dagu/v2/internal/persis/file/dag"
 	"testing"
 
-	"github.com/dagucloud/dagu/v2/internal/service/scheduler"
 	"github.com/dagucloud/dagu/v2/internal/test"
 	"github.com/stretchr/testify/require"
 )
 
 func TestReadEntries(t *testing.T) {
 	t.Run("InvalidDirectory", func(t *testing.T) {
-		manager := scheduler.NewFileEntryReader("invalid_directory", nil, false)
+		manager := filedag.NewFileEntryReader("invalid_directory", nil, false, "", "")
 		err := manager.Init(context.Background())
 		require.Error(t, err)
 	})

@@ -5,13 +5,13 @@ package spec
 
 import (
 	"errors"
-	"github.com/dagucloud/dagu/v2/internal/cmn/fileutil"
 	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/dagucloud/dagu/v2/internal/cmn/fileutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

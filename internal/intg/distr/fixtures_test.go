@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	filedag "github.com/dagucloud/dagu/v2/internal/persis/file/dag"
+	"github.com/dagucloud/dagu/v2/internal/workspace"
 	"os"
 	"path/filepath"
 	goruntime "runtime"
@@ -349,10 +351,12 @@ func (f *testFixture) startSchedulerWithOptions(
 ) {
 	f.t.Helper()
 
-	em := scheduler.NewFileEntryReader(
+	em := filedag.NewFileEntryReader(
 		f.coord.Config.Paths.DAGsDir,
 		f.coord.DAGRepository,
 		f.coord.Config.DAGDiscovery.Recursive,
+		f.coord.Config.Paths.BaseConfig,
+		workspace.BaseConfigDir(f.coord.Config.Paths.DAGsDir),
 	)
 
 	schedulerInst, err := scheduler.New(f.coord.Config, scheduler.Dependencies{

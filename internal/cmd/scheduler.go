@@ -11,9 +11,11 @@ import (
 	"github.com/dagucloud/dagu/v2/internal/cmn/logger"
 	"github.com/dagucloud/dagu/v2/internal/cmn/logger/tag"
 	"github.com/dagucloud/dagu/v2/internal/eventstore"
+	filedag "github.com/dagucloud/dagu/v2/internal/persis/file/dag"
 	"github.com/dagucloud/dagu/v2/internal/runtime"
 	"github.com/dagucloud/dagu/v2/internal/service/scheduler"
 	schedulerfile "github.com/dagucloud/dagu/v2/internal/service/scheduler/file"
+	"github.com/dagucloud/dagu/v2/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -56,6 +58,13 @@ func newScheduler(ctx *Context, deps scheduler.Dependencies) (*scheduler.Schedul
 		ctx.Config,
 		runtime.WithLatestStatusAllHistory(),
 	)
+	if deps.EntryReader == nil {
+		deps.EntryReader = filedag.NewFileEntryReader(
+			ctx.Config.Paths.DAGsDir, ctx.Persistence.DAGRepository,
+			ctx.Config.DAGDiscovery.Recursive, ctx.Config.Paths.BaseConfig,
+			workspace.BaseConfigDir(ctx.Config.Paths.DAGsDir),
+		)
+	}
 	deps.DAGRepository = ctx.Persistence.DAGRepository
 	deps.DAGRunRepository = ctx.Persistence.DAGRunRepository
 	deps.QueueStore = ctx.Persistence.QueueStore

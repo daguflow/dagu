@@ -12,7 +12,7 @@ const defaultBaseConfig = `# Base DAG Configuration
 # Individual DAGs can override any setting.
 # Precedence: global base -> workspace base -> DAG.
 # Set skip_if_successful: false in a DAG to override an inherited true.
-# Restart the scheduler after changing global or workspace scheduling defaults.
+# Changes to global or workspace defaults are reloaded automatically.
 # Environment variables (env:) are additive — DAG env vars append to these.
 #
 # Settings with sensible defaults are enabled below. Uncomment others as needed.

@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/dagucloud/dagu/v2/internal/cmn/config"
+	"github.com/dagucloud/dagu/v2/internal/cmn/filenotify"
 	persisfile "github.com/dagucloud/dagu/v2/internal/persis/file"
-	"github.com/dagucloud/dagu/v2/internal/service/scheduler/filenotify"
 	"github.com/fsnotify/fsnotify"
 )
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/dagucloud/dagu/v2/internal/cmn/buildenv"
 	"github.com/dagucloud/dagu/v2/internal/cmn/config"
+	"github.com/dagucloud/dagu/v2/internal/spec"
 	"github.com/dagucloud/dagu/v2/internal/workspace"
 	"github.com/stretchr/testify/require"
 )
@@ -53,7 +54,7 @@ steps:
     action: ops.hello
 `), 0o600))
 
-	dag, err := loadDAGMetadata(ctx, dagPath)
+	dag, err := spec.Load(ctx, dagPath, spec.OnlyMetadata(), spec.WithoutEval(), spec.SkipSchemaValidation())
 	require.NoError(t, err)
 
 	executor := NewDAGExecutor(

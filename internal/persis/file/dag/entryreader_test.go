@@ -1,11 +1,14 @@
 // Copyright (C) 2026 Yota Hamada
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-package scheduler
+package dag
 
 import (
 	"context"
-	"fmt"
+	"github.com/dagucloud/dagu/v2/internal/cmn/filenotify"
+	"github.com/dagucloud/dagu/v2/internal/cmn/fileutil"
+	"github.com/dagucloud/dagu/v2/internal/persis"
+	"github.com/dagucloud/dagu/v2/internal/workspace"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -13,9 +16,6 @@ import (
 	"time"
 
 	"github.com/dagucloud/dagu/v2/internal/ir"
-	filedag "github.com/dagucloud/dagu/v2/internal/persis/file/dag"
-	"github.com/dagucloud/dagu/v2/internal/spec"
-	"github.com/dagucloud/dagu/v2/internal/testutil"
 	"github.com/fsnotify/fsnotify"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,15 +26,15 @@ func TestSendEvent_UnblocksOnQuit(t *testing.T) {
 	t.Parallel()
 
 	er := &entryReaderImpl{
-		events: make(chan DAGChangeEvent), // unbuffered
+		events: make(chan persis.DAGChangeEvent), // unbuffered
 		quit:   make(chan struct{}),
 	}
 
 	done := make(chan struct{})
 	go func() {
-		er.sendEvent(context.Background(), DAGChangeEvent{
-			Type:     DAGChangeAdded,
-			DAGEntry: DAGEntry{DAG: &ir.DAG{Name: "test"}},
+		er.sendEvent(context.Background(), persis.DAGChangeEvent{
+			Type:     persis.DAGChangeAdded,
+			DAGEntry: persis.DAGEntry{DAG: &ir.DAG{Name: "test"}},
 		})
 		close(done)
 	}()
@@ -58,7 +58,7 @@ func TestSendEvent_UnblocksOnContextCancel(t *testing.T) {
 	t.Parallel()
 
 	er := &entryReaderImpl{
-		events: make(chan DAGChangeEvent), // unbuffered
+		events: make(chan persis.DAGChangeEvent), // unbuffered
 		quit:   make(chan struct{}),
 	}
 
@@ -66,9 +66,9 @@ func TestSendEvent_UnblocksOnContextCancel(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		er.sendEvent(ctx, DAGChangeEvent{
-			Type:     DAGChangeAdded,
-			DAGEntry: DAGEntry{DAG: &ir.DAG{Name: "test"}},
+		er.sendEvent(ctx, persis.DAGChangeEvent{
+			Type:     persis.DAGChangeAdded,
+			DAGEntry: persis.DAGEntry{DAG: &ir.DAG{Name: "test"}},
 		})
 		close(done)
 	}()
@@ -98,9 +98,9 @@ func TestSendEvent_NilChannelReturnsImmediately(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		er.sendEvent(context.Background(), DAGChangeEvent{
-			Type:     DAGChangeAdded,
-			DAGEntry: DAGEntry{DAG: &ir.DAG{Name: "test"}},
+		er.sendEvent(context.Background(), persis.DAGChangeEvent{
+			Type:     persis.DAGChangeAdded,
+			DAGEntry: persis.DAGEntry{DAG: &ir.DAG{Name: "test"}},
 		})
 		close(done)
 	}()
@@ -123,7 +123,7 @@ func writeDAGFile(t *testing.T, dir, fileName, dagName string) string {
 }
 
 // newTestEntryReader creates an entry reader wired like the production constructor.
-func newTestEntryReader(dir string, events chan DAGChangeEvent) *entryReaderImpl {
+func newTestEntryReader(dir string, events chan persis.DAGChangeEvent) *entryReaderImpl {
 	return &entryReaderImpl{
 		targetDir: dir,
 		registry:  make(map[string]*ir.DAG),
@@ -138,7 +138,7 @@ func TestHandleFSEvent_CreateAddsDAG(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := t.TempDir()
-	events := make(chan DAGChangeEvent, 10)
+	events := make(chan persis.DAGChangeEvent, 10)
 	er := newTestEntryReader(tmpDir, events)
 
 	writeDAGFile(t, tmpDir, "create-test.yaml", "create-test")
@@ -158,11 +158,11 @@ func TestHandleFSEvent_CreateAddsDAG(t *testing.T) {
 	// Verify Added event was sent
 	select {
 	case event := <-events:
-		assert.Equal(t, DAGChangeAdded, event.Type)
+		assert.Equal(t, persis.DAGChangeAdded, event.Type)
 		assert.Equal(t, "create-test", event.DAG.Name)
 		assert.NotNil(t, event.DAG)
 	case <-time.After(time.Second):
-		t.Fatal("expected DAGChangeAdded event")
+		t.Fatal("expected persis.DAGChangeAdded event")
 	}
 }
 
@@ -171,7 +171,7 @@ func TestHandleFSEvent_WriteUpdatesDAG(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := t.TempDir()
-	events := make(chan DAGChangeEvent, 10)
+	events := make(chan persis.DAGChangeEvent, 10)
 	er := newTestEntryReader(tmpDir, events)
 
 	// Pre-populate registry with existing DAG
@@ -188,10 +188,10 @@ func TestHandleFSEvent_WriteUpdatesDAG(t *testing.T) {
 	// Verify Updated event was sent (not Added, since it existed)
 	select {
 	case event := <-events:
-		assert.Equal(t, DAGChangeUpdated, event.Type)
+		assert.Equal(t, persis.DAGChangeUpdated, event.Type)
 		assert.Equal(t, "update-test", event.DAG.Name)
 	case <-time.After(time.Second):
-		t.Fatal("expected DAGChangeUpdated event")
+		t.Fatal("expected persis.DAGChangeUpdated event")
 	}
 }
 
@@ -200,7 +200,7 @@ func TestHandleFSEvent_RemoveDeletesDAG(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := t.TempDir()
-	events := make(chan DAGChangeEvent, 10)
+	events := make(chan persis.DAGChangeEvent, 10)
 	er := newTestEntryReader(tmpDir, events)
 
 	// Pre-populate registry
@@ -220,10 +220,10 @@ func TestHandleFSEvent_RemoveDeletesDAG(t *testing.T) {
 	// Verify Deleted event was sent
 	select {
 	case event := <-events:
-		assert.Equal(t, DAGChangeDeleted, event.Type)
+		assert.Equal(t, persis.DAGChangeDeleted, event.Type)
 		assert.Equal(t, "remove-test", event.DAG.Name)
 	case <-time.After(time.Second):
-		t.Fatal("expected DAGChangeDeleted event")
+		t.Fatal("expected persis.DAGChangeDeleted event")
 	}
 }
 
@@ -232,7 +232,7 @@ func TestHandleFSEvent_RemoveReloadsDAGWhenFileStillExists(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := t.TempDir()
-	events := make(chan DAGChangeEvent, 10)
+	events := make(chan persis.DAGChangeEvent, 10)
 	er := newTestEntryReader(tmpDir, events)
 
 	er.registry["replace-test.yaml"] = &ir.DAG{Name: "replace-test"}
@@ -251,11 +251,11 @@ func TestHandleFSEvent_RemoveReloadsDAGWhenFileStillExists(t *testing.T) {
 
 	select {
 	case event := <-events:
-		assert.Equal(t, DAGChangeUpdated, event.Type)
+		assert.Equal(t, persis.DAGChangeUpdated, event.Type)
 		assert.Equal(t, "replace-test", event.DAG.Name)
 		assert.NotNil(t, event.DAG)
 	case <-time.After(time.Second):
-		t.Fatal("expected DAGChangeUpdated event")
+		t.Fatal("expected persis.DAGChangeUpdated event")
 	}
 }
 
@@ -264,7 +264,7 @@ func TestHandleFSEvent_NameChangeEmitsDeleteThenAdd(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := t.TempDir()
-	events := make(chan DAGChangeEvent, 10)
+	events := make(chan persis.DAGChangeEvent, 10)
 	er := newTestEntryReader(tmpDir, events)
 
 	// Pre-populate registry with old name
@@ -279,7 +279,7 @@ func TestHandleFSEvent_NameChangeEmitsDeleteThenAdd(t *testing.T) {
 	})
 
 	// Should get Delete for old name, then Added for new name
-	var receivedEvents []DAGChangeEvent
+	var receivedEvents []persis.DAGChangeEvent
 	timeout := time.After(time.Second)
 	for len(receivedEvents) < 2 {
 		select {
@@ -291,9 +291,9 @@ func TestHandleFSEvent_NameChangeEmitsDeleteThenAdd(t *testing.T) {
 	}
 
 	require.Len(t, receivedEvents, 2)
-	assert.Equal(t, DAGChangeDeleted, receivedEvents[0].Type)
+	assert.Equal(t, persis.DAGChangeDeleted, receivedEvents[0].Type)
 	assert.Equal(t, "old-name", receivedEvents[0].DAG.Name)
-	assert.Equal(t, DAGChangeAdded, receivedEvents[1].Type)
+	assert.Equal(t, persis.DAGChangeAdded, receivedEvents[1].Type)
 	assert.Equal(t, "new-name", receivedEvents[1].DAG.Name)
 }
 
@@ -309,13 +309,13 @@ steps:
     command: echo hello
 `), 0600))
 
-	store := testutil.NewFileDAGRepository(
+	store := newRepository(
 		tmpDir,
-		filedag.WithSkipExamples(true),
-		filedag.WithRecursiveDiscovery(true),
+		WithSkipExamples(true),
+		WithRecursiveDiscovery(true),
 	)
-	events := make(chan DAGChangeEvent, 10)
-	er := NewFileEntryReader(tmpDir, store, true).(*entryReaderImpl)
+	events := make(chan persis.DAGChangeEvent, 10)
+	er := NewFileEntryReader(tmpDir, store, true, "", "")
 	er.events = events
 	require.NoError(t, er.Init(context.Background()))
 	t.Cleanup(er.Stop)
@@ -326,24 +326,24 @@ steps:
 
 	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "other"), 0750))
 	writeDAGFile(t, filepath.Join(tmpDir, "other"), "second.yaml", "shared-name")
-	require.NoError(t, er.refreshRecursive(context.Background()))
+	require.NoError(t, er.refreshRegistry(context.Background()))
 	require.Empty(t, er.Entries())
 
 	select {
 	case event := <-events:
-		assert.Equal(t, DAGChangeDeleted, event.Type)
+		assert.Equal(t, persis.DAGChangeDeleted, event.Type)
 		assert.Equal(t, "shared-name", event.DAG.Name)
 	case <-time.After(time.Second):
 		t.Fatal("expected conflict to remove the scheduled DAG")
 	}
 
 	require.NoError(t, os.Remove(filepath.Join(tmpDir, "other", "second.yaml")))
-	require.NoError(t, er.refreshRecursive(context.Background()))
+	require.NoError(t, er.refreshRegistry(context.Background()))
 	require.Len(t, er.Entries(), 1)
 
 	select {
 	case event := <-events:
-		assert.Equal(t, DAGChangeAdded, event.Type)
+		assert.Equal(t, persis.DAGChangeAdded, event.Type)
 		assert.Equal(t, "shared-name", event.DAG.Name)
 	case <-time.After(time.Second):
 		t.Fatal("expected the resolved DAG conflict to recover")
@@ -378,13 +378,13 @@ func TestEntryReaderExternalDAGFileSymlink(t *testing.T) {
 				t.Skipf("symlink creation is unavailable: %v", err)
 			}
 
-			store := testutil.NewFileDAGRepository(
+			store := newRepository(
 				root,
-				filedag.WithSkipExamples(true),
-				filedag.WithRecursiveDiscovery(tc.recursive),
-				filedag.WithSymlinks(tc.symlinks),
+				WithSkipExamples(true),
+				WithRecursiveDiscovery(tc.recursive),
+				WithSymlinks(tc.symlinks),
 			)
-			reader := NewFileEntryReader(root, store, tc.recursive)
+			reader := NewFileEntryReader(root, store, tc.recursive, "", "")
 			require.NoError(t, reader.Init(context.Background()))
 			t.Cleanup(reader.Stop)
 
@@ -399,13 +399,13 @@ func TestEntryReaderExternalDAGFileSymlink(t *testing.T) {
 
 func TestRecursiveEntryReaderWatchesNewDirectories(t *testing.T) {
 	tmpDir := t.TempDir()
-	store := testutil.NewFileDAGRepository(
+	store := newRepository(
 		tmpDir,
-		filedag.WithSkipExamples(true),
-		filedag.WithRecursiveDiscovery(true),
+		WithSkipExamples(true),
+		WithRecursiveDiscovery(true),
 	)
-	events := make(chan DAGChangeEvent, 10)
-	er := NewFileEntryReader(tmpDir, store, true).(*entryReaderImpl)
+	events := make(chan persis.DAGChangeEvent, 10)
+	er := NewFileEntryReader(tmpDir, store, true, "", "")
 	er.events = events
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -422,106 +422,212 @@ func TestRecursiveEntryReaderWatchesNewDirectories(t *testing.T) {
 
 	select {
 	case event := <-events:
-		assert.Equal(t, DAGChangeAdded, event.Type)
+		assert.Equal(t, persis.DAGChangeAdded, event.Type)
 		assert.Equal(t, "watched", event.DAG.Name)
 	case <-time.After(5 * time.Second):
 		t.Fatal("expected a nested DAG add event")
 	}
 }
 
-func TestInheritedScheduling(t *testing.T) {
-	for _, recursive := range []bool{false, true} {
-		for _, workspaceBase := range []bool{false, true} {
-			for _, policy := range []ir.OverlapPolicy{ir.OverlapPolicySkip, ir.OverlapPolicyAll, ir.OverlapPolicyLatest} {
-				t.Run(fmt.Sprintf("Recursive=%t/Workspace=%t/%s", recursive, workspaceBase, policy), func(t *testing.T) {
-					root := t.TempDir()
-					dir := filepath.Join(root, "dags")
-					fileDir := dir
-					if recursive {
-						fileDir = filepath.Join(dir, "nested")
-					}
-					require.NoError(t, os.MkdirAll(fileDir, 0750))
-					path := filepath.Join(fileDir, "scheduled.yaml")
-					require.NoError(t, os.WriteFile(path, []byte("labels: [workspace=ops]\nsteps:\n  - run: echo tick\n"), 0600))
-					basePath := filepath.Join(root, "base.yaml")
-					base := fmt.Sprintf("schedule:\n  start: '* * * * *'\n  stop: '0 0 * * *'\n  restart: '0 1 * * *'\ncatchup_window: 1h\noverlap_policy: %s\nqueue: pool\n", policy)
-					require.NoError(t, os.WriteFile(basePath, []byte(base), 0600))
-					opts := []filedag.Option{filedag.WithSkipExamples(true), filedag.WithBaseConfig(basePath), filedag.WithRecursiveDiscovery(recursive)}
-					loadOpts := []spec.LoadOption{spec.WithBaseConfig(basePath), spec.WithoutEval()}
-					if workspaceBase {
-						workspaceDir := filepath.Join(root, "workspaces")
-						require.NoError(t, os.MkdirAll(filepath.Join(workspaceDir, "ops"), 0750))
-						require.NoError(t, os.WriteFile(filepath.Join(workspaceDir, "ops", "base.yaml"), []byte(base), 0600))
-						require.NoError(t, os.WriteFile(basePath, []byte("queue: global\n"), 0600))
-						opts = append(opts, filedag.WithWorkspaceBaseConfigDir(workspaceDir))
-						loadOpts = append(loadOpts, spec.WithWorkspaceBaseConfigDir(workspaceDir))
-					}
-					repo := testutil.NewFileDAGRepository(dir, opts...)
-					reader := NewFileEntryReader(dir, repo, recursive)
-					require.NoError(t, reader.Init(t.Context()))
-					t.Cleanup(reader.Stop)
-					entries := reader.Entries()
-					require.Len(t, entries, 1)
-					full, err := spec.Load(t.Context(), path, loadOpts...)
-					require.NoError(t, err)
-					metadata := entries[0].DAG
-					require.Equal(t, full.ProcGroup(), metadata.ProcGroup())
-					require.Equal(t, "pool", metadata.ProcGroup())
-					require.Equal(t, full.Schedule, metadata.Schedule)
-					require.Equal(t, full.StopSchedule, metadata.StopSchedule)
-					require.Equal(t, full.RestartSchedule, metadata.RestartSchedule)
-
-					for _, guard := range []string{"running", "queued"} {
-						t.Run(guard, func(t *testing.T) {
-							now := time.Date(2026, 2, 7, 12, 0, 0, 0, time.UTC)
-							busy := true
-							enqueued := make(map[string]int)
-							newPlanner := func(queues bool) *TickPlanner {
-								planner, _ := newTestTickPlanner(&mockStateStore{state: newMockState(now.Add(-3 * time.Minute))})
-								planner.cfg.QueuesEnabled = queues
-								planner.cfg.IsRunning = func(_ context.Context, dag *ir.DAG) (bool, error) {
-									require.Equal(t, full.ProcGroup(), dag.ProcGroup())
-									return busy && guard == "running", nil
-								}
-								planner.cfg.IsQueued = func(_ context.Context, dag *ir.DAG) (bool, error) {
-									require.Equal(t, full.ProcGroup(), dag.ProcGroup())
-									return busy && guard == "queued", nil
-								}
-								planner.cfg.Enqueue = func(_ context.Context, entry DAGEntry, runID string, _ ir.TriggerType, _ time.Time) error {
-									require.Equal(t, full.ProcGroup(), entry.DAG.ProcGroup())
-									enqueued[runID]++
-									return nil
-								}
-
-								require.NoError(t, planner.Init(t.Context(), entries))
-								return planner
-							}
-							planner := newPlanner(true)
-							require.Empty(t, planner.Plan(t.Context(), now))
-							busy = false
-							runs := planner.Plan(t.Context(), now.Add(time.Minute))
-							require.Len(t, runs, 1)
-							require.Equal(t, ir.TriggerTypeCatchUp, runs[0].TriggerType)
-							var want time.Time
-							switch policy {
-							case ir.OverlapPolicyAll:
-								want = now.Add(-2 * time.Minute)
-							case ir.OverlapPolicySkip:
-								want = now.Add(-time.Minute)
-							case ir.OverlapPolicyLatest:
-								want = now
-							}
-							require.True(t, want.Equal(runs[0].ScheduledTime))
-							planner.DispatchRun(t.Context(), runs[0])
-							require.Equal(t, 1, enqueued[runs[0].RunID])
-							disabled := newPlanner(false)
-							runs = disabled.Plan(t.Context(), now)
-							require.Len(t, runs, 1)
-							require.Equal(t, ir.TriggerTypeScheduler, runs[0].TriggerType)
-						})
-					}
-				})
+func TestBaseWatchLifecycle(t *testing.T) {
+	for _, scope := range []string{"global", "workspace"} {
+		t.Run(scope, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			dir := filepath.Join(root, "dags")
+			require.NoError(t, os.MkdirAll(dir, 0750))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "scheduled.yaml"), []byte("labels: [workspace=ops]\nsteps:\n  - run: echo tick\n"), 0600))
+			base := filepath.Join(root, "config", "base.yaml")
+			global, workspaces := base, ""
+			recursive := scope == "workspace"
+			if recursive {
+				global, workspaces = "", filepath.Join(root, "workspaces")
+				base = filepath.Join(workspaces, "ops", "base.yaml")
 			}
+			repo := newRepository(dir, WithSkipExamples(true), WithBaseConfig(global), WithWorkspaceBaseConfigDir(workspaces), WithRecursiveDiscovery(recursive), WithFileCache(fileutil.NewCache[*ir.DAG]("watch", 2, 0)))
+			reader := NewFileEntryReader(dir, repo, recursive, global, workspaces)
+			require.NoError(t, reader.Init(t.Context()))
+			require.Len(t, reader.Entries(), 1)
+			done := make(chan struct{})
+			go func() { defer close(done); reader.Start(t.Context()) }()
+			t.Cleanup(func() { reader.Stop(); <-done })
+			expect := func(kind persis.DAGChangeType, queue string) {
+				t.Helper()
+				timeout := time.NewTimer(3 * time.Second)
+				defer timeout.Stop()
+				for {
+					select {
+					case event := <-reader.Events():
+						if event.Type == kind && (kind == persis.DAGChangeDeleted || event.DAG.ProcGroup() == queue) {
+							return
+						}
+					case <-timeout.C:
+						t.Fatalf("missing change %v with queue %q", kind, queue)
+					}
+				}
+			}
+			write := func(body string) {
+				t.Helper()
+				require.NoError(t, os.MkdirAll(filepath.Dir(base), 0750))
+				require.NoError(t, os.WriteFile(base, []byte(body), 0600))
+			}
+			write("queue: pool\n")
+			expect(persis.DAGChangeUpdated, "pool")
+			write("queue: [")
+			expect(persis.DAGChangeDeleted, "")
+			write("queue: recovered\n")
+			expect(persis.DAGChangeAdded, "recovered")
+			replacement := filepath.Join(filepath.Dir(base), "replacement.tmp")
+			require.NoError(t, os.WriteFile(replacement, []byte("queue: atomic\n"), 0600))
+			require.NoError(t, os.Rename(replacement, base))
+			expect(persis.DAGChangeUpdated, "atomic")
+			// Recreating a directory before the debounce expires must restore its watch.
+			require.NoError(t, os.RemoveAll(filepath.Dir(base)))
+			write("queue: restored\n")
+			expect(persis.DAGChangeUpdated, "restored")
+			write("queue: final\n")
+			expect(persis.DAGChangeUpdated, "final")
+			require.NoError(t, os.Remove(base))
+			expect(persis.DAGChangeUpdated, "scheduled")
+		})
+	}
+}
+
+type observedWatcher struct {
+	filenotify.FileWatcher
+	added func(string)
+}
+
+func TestDAGWatchSymlinkRoot(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "physical")
+	require.NoError(t, os.MkdirAll(target, 0750))
+	dir := filepath.Join(root, "dags")
+	if err := os.Symlink(target, dir); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("symlinks unavailable: %v", err)
 		}
+		require.NoError(t, err)
+	}
+	workspaces := workspace.BaseConfigDir(dir)
+	require.NoError(t, os.MkdirAll(filepath.Join(workspaces, "ops"), 0750))
+	require.NoError(t, os.WriteFile(filepath.Join(workspaces, "ops", "base.yaml"), []byte("queue: inherited\n"), 0600))
+	path := writeDAGFile(t, dir, "scheduled.yaml", "scheduled")
+	repo := newRepository(dir, WithSkipExamples(true), WithWorkspaceBaseConfigDir(workspaces))
+	reader := NewFileEntryReader(dir, repo, false, "", workspaces)
+	require.NoError(t, reader.Init(t.Context()))
+	require.Len(t, reader.Entries(), 1)
+	done := make(chan struct{})
+	go func() { defer close(done); reader.Start(t.Context()) }()
+	t.Cleanup(func() { reader.Stop(); <-done })
+	require.NoError(t, os.WriteFile(path, []byte("queue: updated\nsteps:\n  - run: echo tick\n"), 0600))
+	select {
+	case event := <-reader.Events():
+		require.Equal(t, persis.DAGChangeUpdated, event.Type)
+		require.Equal(t, "updated", event.DAG.ProcGroup())
+	case <-time.After(time.Second):
+		t.Fatal("ordinary DAG update through symlink root was not observed")
+	}
+}
+
+func (w observedWatcher) Add(path string) error {
+	if err := w.FileWatcher.Add(path); err != nil {
+		return err
+	}
+	w.added(path)
+	return nil
+}
+
+func TestBaseWatchSymlink(t *testing.T) {
+	for _, kind := range []string{"existing", "dangling", "parent"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			dir := filepath.Join(root, "dags")
+			require.NoError(t, os.MkdirAll(dir, 0750))
+			writeDAGFile(t, dir, "scheduled.yaml", "scheduled")
+			target := filepath.Join(root, "shared", "base.yaml")
+			require.NoError(t, os.MkdirAll(filepath.Dir(target), 0750))
+			if kind == "dangling" {
+				target = filepath.Join(root, "shared", "missing", "base.yaml")
+			} else {
+				require.NoError(t, os.WriteFile(target, []byte("queue: old\n"), 0600))
+			}
+			base := filepath.Join(root, "config", "base.yaml")
+			require.NoError(t, os.MkdirAll(filepath.Dir(base), 0750))
+			link, destination := base, target
+			if kind == "parent" {
+				link, destination = filepath.Join(root, "config", "current"), filepath.Dir(target)
+				base = filepath.Join(link, "base.yaml")
+			}
+			symlink := func(target, link string) {
+				t.Helper()
+				if err := os.Symlink(target, link); err != nil {
+					if runtime.GOOS == "windows" {
+						t.Skipf("symlinks unavailable: %v", err)
+					}
+					require.NoError(t, err)
+				}
+			}
+			symlink(destination, link)
+			repo := newRepository(dir, WithBaseConfig(base), WithSkipExamples(true))
+			reader := NewFileEntryReader(dir, repo, false, base, "")
+			require.NoError(t, reader.Init(t.Context()))
+			watchAdded := make(chan struct{})
+			targetParent := filepath.Dir(target)
+			reader.watcher = observedWatcher{FileWatcher: reader.watcher, added: func(path string) {
+				if path == targetParent {
+					select {
+					case <-watchAdded:
+					default:
+						close(watchAdded)
+					}
+				}
+			}}
+			done := make(chan struct{})
+			go func() { defer close(done); reader.Start(t.Context()) }()
+			t.Cleanup(func() { reader.Stop(); <-done })
+			expect := func(queue string) {
+				t.Helper()
+				timer := time.NewTimer(time.Second)
+				defer timer.Stop()
+				for {
+					select {
+					case event := <-reader.Events():
+						if event.Type == persis.DAGChangeUpdated && event.DAG.ProcGroup() == queue {
+							return
+						}
+					case <-timer.C:
+						t.Fatalf("base symlink change to queue %q was not observed", queue)
+					}
+				}
+			}
+			if kind == "dangling" {
+				require.NoError(t, os.MkdirAll(filepath.Dir(target), 0750))
+				// Wait for the directory event to be processed before creating its file.
+				select {
+				case <-watchAdded:
+				case <-time.After(time.Second):
+					t.Fatal("new symlink target directory was not observed")
+				}
+			}
+			require.NoError(t, os.WriteFile(target, []byte("queue: updated\n"), 0600))
+			expect("updated")
+			require.NoError(t, os.Remove(target))
+			expect("scheduled")
+			require.NoError(t, os.WriteFile(target, []byte("queue: recovered\n"), 0600))
+			expect("recovered")
+			// kqueue can omit same-name symlink replacement events even with a parent watch.
+			if kind == "parent" && (runtime.GOOS == "linux" || runtime.GOOS == "windows") {
+				target = filepath.Join(root, "replacement", "base.yaml")
+				require.NoError(t, os.MkdirAll(filepath.Dir(target), 0750))
+				require.NoError(t, os.WriteFile(target, []byte("queue: replacement\n"), 0600))
+				require.NoError(t, os.Remove(link))
+				symlink(filepath.Dir(target), link)
+				expect("replacement")
+				require.NoError(t, os.WriteFile(target, []byte("queue: latest\n"), 0600))
+				expect("latest")
+			}
+		})
 	}
 }

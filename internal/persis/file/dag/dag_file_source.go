@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Yota Hamada
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-package scheduler
+package dag
 
 import (
 	"context"
@@ -12,7 +12,6 @@ import (
 
 	"github.com/dagucloud/dagu/v2/internal/ir"
 	"github.com/dagucloud/dagu/v2/internal/persis"
-	filedag "github.com/dagucloud/dagu/v2/internal/persis/file/dag"
 	"github.com/dagucloud/dagu/v2/internal/spec"
 )
 
@@ -75,7 +74,7 @@ func (s *dagFileSource) snapshot(ctx context.Context, fileName string) (dagFileS
 			return dagFileSnapshot{dag: dag, exists: true}, nil
 		}
 
-		if errors.Is(err, filedag.ErrExternalSymlinkDisabled) || !errors.Is(err, os.ErrNotExist) {
+		if errors.Is(err, ErrExternalSymlinkDisabled) || !errors.Is(err, os.ErrNotExist) {
 			return dagFileSnapshot{}, err
 		}
 		if attempt >= dagFileSnapshotRetries {
