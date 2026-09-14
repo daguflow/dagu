@@ -4599,10 +4599,12 @@ export interface components {
             currentPage: number;
             /** @description total number of pages */
             totalPages: number;
-            /** @description next page number */
+            /** @description next page number, clamped to totalPages on the last page */
             nextPage: number;
             /** @description previous page number */
             prevPage: number;
+            /** @description whether a page follows the current one */
+            hasNextPage: boolean;
         };
         /**
          * @description Unique identifier for the DAG-run. The special value 'latest' can be used to reference the most recent DAG-run.

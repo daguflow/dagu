@@ -12089,16 +12089,20 @@ components:
           description: total number of pages
         nextPage:
           type: integer
-          description: next page number
+          description: next page number, clamped to totalPages on the last page
         prevPage:
           type: integer
           description: previous page number
+        hasNextPage:
+          type: boolean
+          description: whether a page follows the current one
       required:
         - totalRecords
         - currentPage
         - totalPages
         - nextPage
         - prevPage
+        - hasNextPage
 
     DAGRunId:
       type: string
