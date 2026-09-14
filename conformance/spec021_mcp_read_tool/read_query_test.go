@@ -21,7 +21,7 @@ func TestReadTargetQueryParameters(t *testing.T) {
 		{
 			name:   "dags pagination sorting and labels",
 			target: "dags",
-			query:  "page=1&perPage=1000&sort=nextRun&order=desc&labels=alpha,beta",
+			query:  "page=1&perPage=200&sort=nextRun&order=desc&labels=alpha,beta",
 			validate: func(t *testing.T, output map[string]any) {
 				requireItems(t, requireData(t, output))
 			},
@@ -117,7 +117,7 @@ func TestReadURIQueryParameters(t *testing.T) {
 		{
 			name:     "dags query",
 			target:   "dags",
-			uri:      "dagu://dags?page=1&perPage=1000&name=" + fixture.dagName + "&sort=name&order=asc&labels=alpha,beta",
+			uri:      "dagu://dags?page=1&perPage=200&name=" + fixture.dagName + "&sort=name&order=asc&labels=alpha,beta",
 			linkName: "dags",
 			mimeType: "application/json",
 			validate: func(t *testing.T, output map[string]any) {
@@ -190,7 +190,7 @@ func TestReadTargetQueryValidationErrors(t *testing.T) {
 		{name: "dags page below range", target: "dags", query: "page=0"},
 		{name: "dags page not integer", target: "dags", query: "page=x"},
 		{name: "dags perPage below range", target: "dags", query: "perPage=0"},
-		{name: "dags perPage above range", target: "dags", query: "perPage=1001"},
+		{name: "dags perPage above range", target: "dags", query: "perPage=201"},
 		{name: "dags labels include empty label", target: "dags", query: "labels=alpha,,beta"},
 		{name: "dags sort unsupported", target: "dags", query: "sort=createdAt"},
 		{name: "dags order unsupported", target: "dags", query: "order=sideways"},
@@ -242,7 +242,7 @@ func TestReadURIQueryValidationErrors(t *testing.T) {
 		uri  string
 	}{
 		{name: "dags page below range", uri: "dagu://dags?page=0"},
-		{name: "dags perPage above range", uri: "dagu://dags?perPage=1001"},
+		{name: "dags perPage above range", uri: "dagu://dags?perPage=201"},
 		{name: "dags labels include empty label", uri: "dagu://dags?labels=alpha,,beta"},
 		{name: "dags sort unsupported", uri: "dagu://dags?sort=createdAt"},
 		{name: "dags repeated non-repeatable parameter", uri: "dagu://dags?name=a&name=b"},

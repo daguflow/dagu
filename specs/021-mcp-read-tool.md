@@ -160,7 +160,7 @@ outside the table below fail with `invalid_tool_input` in target mode and
 | Target | Parameter | Value contract |
 | --- | --- | --- |
 | `dags` | `page` | Integer greater than or equal to `1`. |
-| `dags` | `perPage` | Integer from `1` through `1000`. |
+| `dags` | `perPage` | Integer from `1` through `200`. |
 | `dags` | `name` | Non-empty string. |
 | `dags` | `labels` | Comma-separated non-empty label strings. |
 | `dags` | `sort` | One of `name` or `nextRun`. |
