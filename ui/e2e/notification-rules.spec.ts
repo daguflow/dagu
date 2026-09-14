@@ -71,9 +71,11 @@ test('edits notification events and adds a route', async ({
     });
     await rejected.uncheck();
     await expect(rejected).not.toBeChecked();
-    await expect(page.getByRole('alert')).toHaveText(
-      'Select at least one event before saving.'
-    );
+    await expect(
+      page.getByRole('alert').filter({
+        hasText: /^Select at least one event before saving\.$/,
+      })
+    ).toBeVisible();
     await expect(
       page.getByRole('button', { name: 'Save changes' })
     ).toBeDisabled();
