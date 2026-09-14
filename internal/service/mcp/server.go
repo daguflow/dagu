@@ -173,6 +173,24 @@ func registerResources(server *mcpsdk.Server, svc *Service) {
 		}, svc.readResource)
 	}
 
+	server.AddResource(&mcpsdk.Resource{
+		URI:         readResourceDAGsCollectionURI,
+		Name:        "dags",
+		Title:       "DAGs",
+		Description: "DAG summaries visible to the caller.",
+		MIMEType:    resourceMIMEJSON,
+	}, svc.readResource)
+
+	// Resource reads resolve by exact URI first and by template second, so the
+	// collection needs a template to serve the filtered form as well.
+	server.AddResourceTemplate(&mcpsdk.ResourceTemplate{
+		URITemplate: "dagu://dags{?page,perPage,name,labels,active,sort,order}",
+		Name:        "dags_query",
+		Title:       "DAGs (filtered)",
+		Description: "DAG summaries visible to the caller, narrowed by list filters.",
+		MIMEType:    resourceMIMEJSON,
+	}, svc.readResource)
+
 	server.AddResourceTemplate(&mcpsdk.ResourceTemplate{
 		URITemplate: "dagu://dags/{name}/spec",
 		Name:        "dag_spec",
@@ -297,6 +315,16 @@ func registerPrompts(server *mcpsdk.Server) {
 			{Name: "dagRunId", Description: "DAG-run ID.", Required: true},
 		},
 	}, promptDebugRun)
+}
+
+// listDAGs returns the normalized DAG collection model, including DAGs
+// discovered under the alternate DAGs directory.
+func (svc *Service) listDAGs(ctx context.Context, query string) (map[string]any, error) {
+	raw, err := svc.api.GetDAGsListDataIncludingAltDirs(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	return normalizeDAGList(raw)
 }
 
 func (svc *Service) getDAGSpec(ctx context.Context, name string) (map[string]any, error) {
@@ -680,6 +708,23 @@ func (svc *Service) readResourceText(ctx context.Context, rawURI string) (string
 		}
 		return ref.text, resourceMIMEText, nil
 	case "dags":
+		if len(segments) == 0 {
+			if readErr := validateReadQuery(readTargetDAGs, parsed.RawQuery, true, rawURI); readErr != nil {
+				return "", "", mcpsdk.ResourceNotFoundError(rawURI)
+			}
+			if err := svc.requireAPI(); err != nil {
+				return "", "", err
+			}
+			data, err := svc.listDAGs(ctx, parsed.RawQuery)
+			if err != nil {
+				return "", "", err
+			}
+			text, err := jsonText(data)
+			if err != nil {
+				return "", "", err
+			}
+			return text, resourceMIMEJSON, nil
+		}
 		if len(segments) != 2 || segments[1] != "spec" {
 			return "", "", mcpsdk.ResourceNotFoundError(rawURI)
 		}
