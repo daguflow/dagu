@@ -4929,6 +4929,9 @@ paths:
       operationId: "testNotificationChannel"
       tags:
         - "notifications"
+      security:
+        - apiToken: []
+        - basicAuth: []
       parameters:
         - $ref: "#/components/parameters/RemoteNode"
         - name: channelId

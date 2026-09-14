@@ -144,17 +144,30 @@ test('edits notification events and adds a route', async ({
     expect(savedRoutes.routes[0].events).toEqual(['dag.run.failed']);
     expect(savedRoutes.routes[1].channelId).toBe(channels[1]!.id);
   } finally {
-    const restored = await request.put(routesURL, {
-      headers,
-      data: originalRoutes,
-    });
-    expect(restored.ok()).toBeTruthy();
-    for (const channel of channels) {
-      const deleted = await request.delete(
-        `/api/v1/notification-channels/${channel.id}?remoteNode=local`,
-        { headers }
-      );
-      expect(deleted.ok()).toBeTruthy();
+    // Restore routes before deleting channels they may still reference.
+    const results = await Promise.allSettled([
+      request.put(routesURL, { headers, data: originalRoutes }),
+    ]);
+    results.push(
+      ...(await Promise.allSettled(
+        channels.map((channel) =>
+          request.delete(
+            `/api/v1/notification-channels/${channel.id}?remoteNode=local`,
+            { headers }
+          )
+        )
+      ))
+    );
+    for (const result of results) {
+      expect.soft(result).toMatchObject({ status: 'fulfilled' });
+      if (result.status === 'fulfilled') {
+        expect
+          .soft(
+            result.value.ok(),
+            `${result.value.url()}: HTTP ${result.value.status()}`
+          )
+          .toBeTruthy();
+      }
     }
   }
 });
