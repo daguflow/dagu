@@ -487,6 +487,8 @@ const english = {
   'e.g. production-server': 'e.g. production-server',
   'Each row groups this many days, scrolling back in time.':
     'Each row groups this many days, scrolling back in time.',
+  'Each channel can have one route per scope. Edit its events above, or add another channel.':
+    'Each channel can have one route per scope. Edit its events above, or add another channel.',
   Edit: 'Edit',
   'Edit API Key': 'Edit API Key',
   'Edit Profile': 'Edit Profile',
@@ -1290,6 +1292,8 @@ const english = {
   'Select an action to inspect its configuration.':
     'Select an action to inspect its configuration.',
   'Select an artifact': 'Select an artifact',
+  'Select at least one event before saving.':
+    'Select at least one event before saving.',
   'Select attribution': 'Select attribution',
   'Select channel': 'Select channel',
   'Select connection': 'Select connection',
@@ -2602,6 +2606,8 @@ const chinese = {
   'e.g. production-server': '例如: production-server',
   'Each row groups this many days, scrolling back in time.':
     '每行分组这么多天，向后滚动时间。',
+  'Each channel can have one route per scope. Edit its events above, or add another channel.':
+    '每个通道在每个作用域内只能有一条路由。请在上方编辑事件，或添加另一个通道。',
   Edit: '编辑',
   'Edit API Key': '编辑 API 密钥',
   'Edit Profile': '编辑个人资料',
@@ -3384,6 +3390,7 @@ const chinese = {
   'Select all loaded workflows': '选择所有已加载工作流',
   'Select an action to inspect its configuration.': '选择操作以检查其配置。',
   'Select an artifact': '选择产物',
+  'Select at least one event before saving.': '保存前请至少选择一个事件。',
   'Select attribution': '选择归属',
   'Select channel': '选择频道',
   'Select connection': '选择连接',
@@ -4678,6 +4685,8 @@ const japanese = {
   'e.g. production-server': '例: production-server',
   'Each row groups this many days, scrolling back in time.':
     '各行はこの日数をグループ化し、過去にスクロールします。',
+  'Each channel can have one route per scope. Edit its events above, or add another channel.':
+    '各スコープでチャネルごとに設定できるルートは1つです。上のイベントを編集するか、別のチャネルを追加してください。',
   Edit: '編集',
   'Edit API Key': 'APIキーを編集',
   'Edit Profile': 'プロフィールを編集',
@@ -5496,6 +5505,8 @@ const japanese = {
   'Select an action to inspect its configuration.':
     '設定を確認するにはアクションを選択してください。',
   'Select an artifact': '成果物を選択',
+  'Select at least one event before saving.':
+    '保存する前にイベントを1つ以上選択してください。',
   'Select attribution': '帰属を選択',
   'Select channel': 'チャネルを選択',
   'Select connection': '接続を選択',

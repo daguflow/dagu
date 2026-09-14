@@ -185,10 +185,6 @@ function sameEvents(
   );
 }
 
-function routeEventsForDisplay(route: DraftRoute): NotificationEventType[] {
-  return route.events.length > 0 ? route.events : DEFAULT_ROUTE_EVENTS;
-}
-
 function smtpDraftFromAPI(settings: NotificationWorkspaceSettings): SMTPDraft {
   const smtp = settings.smtp;
   if (!smtp) {
@@ -226,7 +222,7 @@ function routeSetDraftFromAPI(routeSet?: NotificationRouteSet): DraftRouteSet {
       id: route.id,
       channelId: route.channelId,
       enabled: route.enabled,
-      events: route.events || [],
+      events: route.events?.length ? route.events : [...DEFAULT_ROUTE_EVENTS],
     })),
   };
 }
@@ -239,7 +235,7 @@ function routeSetInput(draft: DraftRouteSet): NotificationRouteSetInput {
       id: route.id,
       channelId: route.channelId,
       enabled: route.enabled,
-      events: routeEventsForDisplay(route),
+      events: route.events,
     })),
   };
 }
@@ -457,6 +453,7 @@ function hasUnusedChannel(
 
 type NotificationRulesHeaderProps = {
   canAddRoute: boolean;
+  canSave: boolean;
   saving: boolean;
   onAddRoute: () => void;
   onSave: () => void;
@@ -464,6 +461,7 @@ type NotificationRulesHeaderProps = {
 
 function NotificationRulesHeader({
   canAddRoute,
+  canSave,
   saving,
   onAddRoute,
   onSave,
@@ -493,7 +491,7 @@ function NotificationRulesHeader({
             <Plus className="h-4 w-4" />
             <I18nText text={'Add route'} />
           </Button>
-          <Button size="sm" onClick={onSave} disabled={saving}>
+          <Button size="sm" onClick={onSave} disabled={saving || !canSave}>
             {saving ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
@@ -813,17 +811,35 @@ function RouteBuilder({
           </div>
         )}
 
-        {!isWorkspaceInheritMode && availableChannels.length > 0 && (
-          <button
-            type="button"
-            onClick={onAddRoute}
-            disabled={routeControlsDisabled || !canAddRoute}
-            className="flex h-10 w-full items-center justify-center gap-2 rounded-md border border-dashed border-border text-sm text-primary transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:text-muted-foreground"
-          >
-            <Plus className="h-4 w-4" />
-            <I18nText text={'Add another route'} />
-          </button>
-        )}
+        {!isWorkspaceInheritMode &&
+          availableChannels.length > 0 &&
+          (canAddRoute ? (
+            <button
+              type="button"
+              onClick={onAddRoute}
+              disabled={routeControlsDisabled}
+              className="flex h-10 w-full items-center justify-center gap-2 rounded-md border border-dashed border-border text-sm text-primary transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:text-muted-foreground"
+            >
+              <Plus className="h-4 w-4" />
+              <I18nText text={'Add another route'} />
+            </button>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border px-3 py-3 text-sm text-muted-foreground">
+              <p>
+                <I18nText
+                  text={
+                    'Each channel can have one route per scope. Edit its events above, or add another channel.'
+                  }
+                />
+              </p>
+              <Button asChild variant="outline" size="sm">
+                <Link to={channelsHref}>
+                  <Plus className="h-4 w-4" />
+                  <I18nText text={'Add channel'} />
+                </Link>
+              </Button>
+            </div>
+          ))}
       </CardContent>
     </Card>
   );
@@ -850,7 +866,7 @@ function RouteRuleRow({
 }: RouteRuleRowProps) {
   const channel = channels.find((item) => item.id === route.channelId);
   const Icon = providerIcon(channel?.type);
-  const effectiveEvents = routeEventsForDisplay(route);
+  const effectiveEvents = route.events;
   const usesOperationalEvents = sameEvents(
     effectiveEvents,
     DEFAULT_ROUTE_EVENTS
@@ -874,18 +890,16 @@ function RouteRuleRow({
               <label
                 key={event.value}
                 className={cn(
-                  'flex h-8 items-center gap-2 rounded-md border px-3 text-xs',
+                  'flex h-8 cursor-pointer items-center gap-2 rounded-md border px-3 text-xs',
                   eventChipClass(event.value, checked)
                 )}
               >
                 <Checkbox
                   checked={checked}
-                  disabled={
-                    disabled || (checked && effectiveEvents.length === 1)
-                  }
+                  disabled={disabled}
                   onCheckedChange={(value) =>
                     onUpdate(index, (current) => {
-                      const currentEvents = routeEventsForDisplay(current);
+                      const currentEvents = current.events;
                       const nextEvents = value
                         ? [...currentEvents, event.value]
                         : currentEvents.filter((item) => item !== event.value);
@@ -916,6 +930,11 @@ function RouteRuleRow({
             </Button>
           )}
         </div>
+        {effectiveEvents.length === 0 && (
+          <p role="alert" className="text-xs text-destructive">
+            <I18nText text={'Select at least one event before saving.'} />
+          </p>
+        )}
       </div>
 
       <div className="min-w-0 space-y-2">
@@ -1007,7 +1026,7 @@ function RoutePreviewPanel({
       if (!channel?.enabled) {
         return [];
       }
-      return routeEventsForDisplay(route).map((event) => ({
+      return route.events.map((event) => ({
         id: `${route.id || route.channelId}-${event}`,
         event,
         channel,
@@ -1449,6 +1468,10 @@ export function NotificationRulesPage() {
 
       <NotificationRulesHeader
         canAddRoute={canAddActiveRoute}
+        canSave={
+          activeWorkspaceInheritsGlobal ||
+          activeDraft.routes.every((route) => route.events.length > 0)
+        }
         saving={activeSaving}
         onAddRoute={addActiveRoute}
         onSave={saveActiveRoutes}

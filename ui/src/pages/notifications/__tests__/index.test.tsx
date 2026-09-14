@@ -7,6 +7,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppBarContext } from '@/contexts/AppBarContext';
+import { NotificationEventType } from '@/api/v1/schema';
 
 vi.hoisted(() => {
   vi.stubGlobal('getConfig', () => ({
@@ -29,7 +30,10 @@ vi.mock('@/hooks/api', () => ({
   useQuery: mocks.useQuery,
 }));
 
-import NotificationsPage, { NotificationChannelsPage } from '..';
+import NotificationsPage, {
+  NotificationChannelsPage,
+  NotificationRulesPage,
+} from '..';
 
 Object.defineProperty(HTMLElement.prototype, 'hasPointerCapture', {
   configurable: true,
@@ -78,6 +82,50 @@ function renderChannelsPage(settings: object) {
         }
       >
         <NotificationChannelsPage />
+      </AppBarContext.Provider>
+    </MemoryRouter>
+  );
+}
+
+function renderRulesPage(
+  extraChannels: object[] = [],
+  events = [
+    NotificationEventType.dag_run_aborted,
+    NotificationEventType.dag_run_rejected,
+  ]
+) {
+  const queries: Record<string, object> = {
+    '/notification-channels': {
+      channels: [
+        { id: 'slack', name: 'slack-test', type: 'slack', enabled: true },
+        ...extraChannels,
+      ],
+    },
+    '/notification-routes/global': {
+      enabled: true,
+      inheritGlobal: true,
+      routes: [
+        {
+          id: 'route',
+          channelId: 'slack',
+          enabled: true,
+          events,
+        },
+      ],
+    },
+  };
+  mocks.useQuery.mockImplementation((path: string) => ({
+    data: queries[path],
+    isLoading: false,
+    mutate: vi.fn(),
+  }));
+
+  render(
+    <MemoryRouter>
+      <AppBarContext.Provider
+        value={{ setTitle: vi.fn(), selectedRemoteNode: 'local' } as never}
+      >
+        <NotificationRulesPage />
       </AppBarContext.Provider>
     </MemoryRouter>
   );
@@ -215,5 +263,114 @@ describe('NotificationChannelsPage', () => {
     );
 
     expect(clientSecret).toHaveValue('typed-secret');
+  });
+});
+
+describe('NotificationRulesPage', () => {
+  it('loads operational defaults for saved routes without events', () => {
+    renderRulesPage([], []);
+
+    for (const name of ['Failed', 'Aborted', 'Rejected', 'Waiting']) {
+      expect(screen.getByRole('checkbox', { name })).toBeChecked();
+    }
+    expect(
+      screen.getByRole('checkbox', { name: 'Succeeded' })
+    ).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled();
+  });
+
+  it('allows clearing events while editing and requires a selection to save', async () => {
+    const user = userEvent.setup();
+    renderRulesPage();
+
+    await user.click(screen.getByRole('checkbox', { name: 'Aborted' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Rejected' }));
+
+    for (const checkbox of screen.getAllByRole('checkbox')) {
+      expect(checkbox).not.toBeChecked();
+    }
+    expect(
+      screen.getByText('Select at least one event before saving.')
+    ).toBeVisible();
+    expect(
+      screen.getByText('No enabled route currently sends notifications.')
+    ).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+
+    await user.click(screen.getByRole('checkbox', { name: 'Failed' }));
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled();
+  });
+
+  it('explains how to add a destination when every channel has a route', () => {
+    renderRulesPage();
+
+    expect(
+      screen.getByText(
+        'Each channel can have one route per scope. Edit its events above, or add another channel.'
+      )
+    ).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Add channel' })).toHaveAttribute(
+      'href',
+      '/notification-channels'
+    );
+  });
+
+  it('adds a route for an unused channel', async () => {
+    const user = userEvent.setup();
+    renderRulesPage([
+      { id: 'email', name: 'email-test', type: 'smtp', enabled: true },
+    ]);
+
+    await user.click(screen.getByRole('button', { name: 'Add another route' }));
+
+    expect(
+      screen.getByRole('switch', { name: 'Toggle email-test' })
+    ).toBeChecked();
+    expect(
+      screen.getAllByRole('checkbox', { name: 'Failed' })[1]
+    ).toBeChecked();
+  });
+
+  it('edits events through checkboxes and labels and saves them', async () => {
+    const user = userEvent.setup();
+    mocks.client.PUT.mockResolvedValue({});
+    renderRulesPage();
+
+    const failed = screen.getByRole('checkbox', {
+      name: 'Failed',
+    });
+    const rejected = screen.getByRole('checkbox', {
+      name: 'Rejected',
+    });
+    expect(failed).not.toBeChecked();
+    expect(rejected).toBeChecked();
+
+    await user.click(failed);
+    expect(failed).toBeChecked();
+    await user.click(rejected.closest('label')!);
+    expect(rejected).not.toBeChecked();
+
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(mocks.client.PUT).toHaveBeenCalledWith(
+      '/notification-routes/global',
+      {
+        params: { query: { remoteNode: 'local' } },
+        body: {
+          enabled: true,
+          inheritGlobal: true,
+          routes: [
+            {
+              id: 'route',
+              channelId: 'slack',
+              enabled: true,
+              events: [
+                NotificationEventType.dag_run_aborted,
+                NotificationEventType.dag_run_failed,
+              ],
+            },
+          ],
+        },
+      }
+    );
   });
 });
