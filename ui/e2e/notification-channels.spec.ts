@@ -9,19 +9,6 @@ test('manages and tests notification channels on desktop and mobile', async ({
   page,
   request,
 }) => {
-  let deliveries = 0;
-  const destination = createServer((req, res) => {
-    req.resume();
-    deliveries++;
-    res.writeHead(204).end();
-  });
-  await new Promise<void>((resolve) =>
-    destination.listen(0, '127.0.0.1', resolve)
-  );
-  const address = destination.address();
-  if (!address || typeof address === 'string') {
-    throw new Error('Test destination did not start');
-  }
   const stack = await loadStack();
   const token = await loginViaAPI(
     request,
@@ -31,8 +18,22 @@ test('manages and tests notification channels on desktop and mobile', async ({
   const headers = { Authorization: `Bearer ${token}` };
   let channelId: string | undefined;
   const name = uniqueName('e2e-channel');
+  let deliveries = 0;
+  const destination = createServer((req, res) => {
+    req.resume();
+    deliveries++;
+    res.writeHead(204).end();
+  });
+  await new Promise<void>((resolve, reject) => {
+    destination.once('error', reject);
+    destination.listen(0, '127.0.0.1', resolve);
+  });
 
   try {
+    const address = destination.address();
+    if (!address || typeof address === 'string') {
+      throw new Error('Test destination did not start');
+    }
     await loginViaUI(page, stack.auth.adminUsername, stack.auth.adminPassword);
     await page.goto('/notification-channels');
     await page
@@ -59,7 +60,7 @@ test('manages and tests notification channels on desktop and mobile', async ({
     const created = page.waitForResponse(
       (response) =>
         response.request().method() === 'POST' &&
-        response.url().includes('/notification-channels?')
+        new URL(response.url()).pathname === '/api/v1/notification-channels'
     );
     await editor
       .getByRole('button', { name: 'Create channel', exact: true })
@@ -130,15 +131,18 @@ test('manages and tests notification channels on desktop and mobile', async ({
     await expect(row).not.toBeVisible();
     channelId = undefined;
   } finally {
-    if (channelId) {
-      const deleted = await request.delete(
-        `/api/v1/notification-channels/${channelId}?remoteNode=local`,
-        { headers }
+    try {
+      if (channelId) {
+        const deleted = await request.delete(
+          `/api/v1/notification-channels/${channelId}?remoteNode=local`,
+          { headers }
+        );
+        expect(deleted.ok()).toBeTruthy();
+      }
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        destination.close((error) => (error ? reject(error) : resolve()))
       );
-      expect(deleted.ok()).toBeTruthy();
     }
-    await new Promise<void>((resolve, reject) =>
-      destination.close((error) => (error ? reject(error) : resolve()))
-    );
   }
 });
