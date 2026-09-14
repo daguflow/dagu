@@ -1157,6 +1157,7 @@ func valueOf[T any](ptr *T) T {
 func toPagination[T any](paginatedResult pagination.PaginatedResult[T]) api.Pagination {
 	return api.Pagination{
 		CurrentPage:  paginatedResult.CurrentPage,
+		HasNextPage:  paginatedResult.HasNextPage,
 		NextPage:     paginatedResult.NextPage,
 		PrevPage:     paginatedResult.PrevPage,
 		TotalPages:   paginatedResult.TotalPages,

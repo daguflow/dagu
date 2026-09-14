@@ -1017,7 +1017,7 @@ func validReadQueryValue(target, key, value string) bool {
 		case "page":
 			return validIntRange(value, 1, 0)
 		case "perPage":
-			return validIntRange(value, 1, 1000)
+			return validIntRange(value, 1, 200)
 		case "name":
 			return value != ""
 		case "labels":
