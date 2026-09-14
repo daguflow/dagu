@@ -4902,6 +4902,46 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /notification-channels/{channelId}/test:
+    post:
+      summary: "Test notification channel"
+      description: "Sends a sample failure notification to one saved channel, including disabled channels. Does not require a workflow or change notification rules. Developer, manager, or admin only."
+      operationId: "testNotificationChannel"
+      tags:
+        - "notifications"
+      parameters:
+        - $ref: "#/components/parameters/RemoteNode"
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "Channel test delivery attempted"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestDAGNotificationResponse"
+        "404":
+          description: "Notification channel not found"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "Forbidden - insufficient permissions"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: "Unexpected error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /incident-providers:
     get:
       summary: "List incident providers"

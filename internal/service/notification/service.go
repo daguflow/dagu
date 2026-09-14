@@ -681,6 +681,25 @@ func (s *Service) ShouldDeliverNotificationBatch(chatbridge.NotificationBatch) b
 	return true
 }
 
+// SendChannelTest sends a sample failure notification to a saved channel,
+// regardless of its enabled state or configured routes.
+func (s *Service) SendChannelTest(ctx context.Context, channelID string) ([]TestResult, error) {
+	channel, err := s.GetChannel(ctx, channelID)
+	if err != nil {
+		return nil, err
+	}
+	event := chatbridge.NotificationEvent{
+		Type:       eventstore.TypeDAGRunFailed,
+		Status:     testStatus("channel-test", eventstore.TypeDAGRunFailed),
+		ObservedAt: time.Now().UTC(),
+	}
+	return s.deliverTestTargets(ctx, []resolvedTarget{{
+		ResultID:   channel.ID,
+		ResultName: channel.Name,
+		Target:     channel.ToTarget(),
+	}}, event), nil
+}
+
 func (s *Service) SendTest(ctx context.Context, dagName, targetID string, eventType eventstore.EventType) ([]TestResult, error) {
 	if eventType == "" {
 		eventType = eventstore.TypeDAGRunFailed

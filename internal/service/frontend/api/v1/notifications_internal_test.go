@@ -84,6 +84,10 @@ func (s notificationServiceStub) SendTest(context.Context, string, string, event
 	return nil, nil
 }
 
+func (s notificationServiceStub) SendChannelTest(context.Context, string) ([]notificationservice.TestResult, error) {
+	return nil, nil
+}
+
 func TestUpdateNotificationChannelMapsSaveTimeNotFound(t *testing.T) {
 	t.Parallel()
 

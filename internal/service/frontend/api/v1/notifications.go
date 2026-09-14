@@ -391,6 +391,25 @@ func (a *API) TestDAGNotifications(ctx context.Context, request api.TestDAGNotif
 	}, nil
 }
 
+func (a *API) TestNotificationChannel(ctx context.Context, request api.TestNotificationChannelRequestObject) (api.TestNotificationChannelResponseObject, error) {
+	if err := a.requireNotificationManagement(ctx); err != nil {
+		return nil, err
+	}
+	results, err := a.notificationService.SendChannelTest(ctx, request.ChannelId)
+	if err != nil {
+		if errors.Is(err, notificationmodel.ErrChannelNotFound) {
+			return nil, notificationNotFound(err.Error())
+		}
+		return nil, err
+	}
+	a.logAudit(ctx, audit.CategoryNotification, "notification_test_send", map[string]any{
+		"channel_id": request.ChannelId,
+	})
+	return api.TestNotificationChannel200JSONResponse{
+		Results: toAPITestNotificationResults(results),
+	}, nil
+}
+
 func (a *API) requireNotificationManagement(ctx context.Context) error {
 	if a.notificationService == nil {
 		return errNotificationManagementNotAvailable
