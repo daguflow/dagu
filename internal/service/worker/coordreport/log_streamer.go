@@ -349,10 +349,15 @@ func (w *stepLogWriter) FlushIfDue() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if w.closed || (len(w.buffer) == 0 && w.remoteSent == len(w.remoteBuffer)) || time.Since(w.pendingSince) < logFlushInterval {
+	if w.closed || (len(w.buffer) == 0 && len(w.remoteBuffer) == 0) || time.Since(w.pendingSince) < logFlushInterval {
 		return nil
 	}
-	return w.flushLocked()
+	if err := w.flushLocked(); err != nil {
+		return err
+	}
+	// Confirm delivery while the step is idle, when no later Send can expose
+	// a server rejection. Failed acknowledgments retain bytes for the next flush.
+	return w.checkpointLocked()
 }
 
 // flushLocked sends buffered data to coordinator.
@@ -427,7 +432,7 @@ func (w *stepLogWriter) flushLocked() error {
 		w.remoteChunks++
 	}
 
-	w.pendingSince = time.Time{}
+	w.pendingSince = time.Now()
 	if len(w.remoteBuffer) >= maxRetainedStepLogSize {
 		return w.checkpointLocked()
 	}
@@ -605,6 +610,7 @@ func toProtoStreamType(streamType int) coordinatorv1.LogStreamType {
 type schedulerLogWriter struct {
 	parentCtx         context.Context
 	ctx               context.Context
+	cancelMu          sync.Mutex
 	cancel            context.CancelFunc
 	streamer          *LogStreamer
 	localFile         *os.File
@@ -627,6 +633,8 @@ type schedulerLogWriter struct {
 }
 
 func (w *schedulerLogWriter) cancelStream() {
+	w.cancelMu.Lock()
+	defer w.cancelMu.Unlock()
 	if w.cancel != nil {
 		w.cancel()
 	}
@@ -735,7 +743,27 @@ func (w *schedulerLogWriter) Flush() error {
 
 	w.streamMu.Lock()
 	defer w.streamMu.Unlock()
-	return w.flushDataLocked(data, localBytes)
+	if err := w.flushDataLocked(data, localBytes); err != nil {
+		return err
+	}
+	if w.stream == nil {
+		return nil
+	}
+	// Acknowledge each flush so sparse logs can recover without another write.
+	if err := w.withOperationTimeout(func() error {
+		_, err := w.stream.CloseAndRecv()
+		return err
+	}); err != nil {
+		w.resetStreamLocked()
+		if isLogStreamingNotConfigured(err) {
+			w.streamInitFailed = true
+			return nil
+		}
+		return err
+	}
+	w.acknowledgedBytes = w.streamedBytes
+	w.stream = nil
+	return nil
 }
 
 func (w *schedulerLogWriter) flushDataLocked(data []byte, localBytes int64) error {
@@ -822,7 +850,9 @@ func (w *schedulerLogWriter) resetStreamLocked() {
 	w.cancelStream()
 	w.stream = nil
 	w.streamedBytes = w.acknowledgedBytes
+	w.cancelMu.Lock()
 	w.ctx, w.cancel = context.WithCancel(w.parentCtx)
+	w.cancelMu.Unlock()
 }
 
 func (w *schedulerLogWriter) withOperationTimeout(operation func() error) error {
@@ -905,9 +935,7 @@ func (w *schedulerLogWriter) close(ctx context.Context) error {
 
 	w.parentCtx = ctx
 	if w.stream == nil {
-		w.cancelStream()
-		w.ctx, w.cancel = context.WithCancel(ctx)
-		w.streamedBytes = w.acknowledgedBytes
+		w.resetStreamLocked()
 	}
 
 	return backoff.Retry(ctx, func(context.Context) error {
@@ -916,6 +944,11 @@ func (w *schedulerLogWriter) close(ctx context.Context) error {
 		}
 		if w.streamedBytes < localBytes {
 			if err := w.streamUnsentLocalFileLocked(localBytes); err != nil {
+				return err
+			}
+		}
+		if w.stream == nil && !w.streamInitFailed && localBytes > 0 {
+			if err := w.ensureStreamLocked(); err != nil {
 				return err
 			}
 		}

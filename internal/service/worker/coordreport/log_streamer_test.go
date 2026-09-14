@@ -369,6 +369,62 @@ func TestFlushIfDue_SmallDataWhileOpen(t *testing.T) {
 	}, 5*time.Second, 50*time.Millisecond)
 }
 
+// A successful Send only queues bytes locally; the server can reject them later.
+func TestSparseLogsRecoverAfterServerRejection(t *testing.T) {
+	for _, scheduler := range []bool{false, true} {
+		name := "step"
+		if scheduler {
+			name = "scheduler"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			rejected := &mockStreamLogsClient{closeErr: status.Error(codes.Unavailable, "temporary server failure")}
+			recovered := &mockStreamLogsClient{}
+			var opened atomic.Int32
+			client := &logStreamerMockClient{
+				streamLogsFunc: func(context.Context) (coordinatorv1.CoordinatorService_StreamLogsClient, error) {
+					if opened.Add(1) == 1 {
+						return rejected, nil
+					}
+					return recovered, nil
+				},
+			}
+			streamer := coordreport.NewLogStreamer(client, "w", "r", "d", "a", ir.DAGRunRef{})
+			var writer io.WriteCloser
+			if scheduler {
+				file, err := os.CreateTemp(t.TempDir(), "scheduler-*.log")
+				require.NoError(t, err)
+				defer func() { require.NoError(t, file.Close()) }()
+				writer = streamer.NewSchedulerLogWriter(context.Background(), file)
+			} else {
+				writer = streamer.NewStepWriter(context.Background(), "step", runctx.StreamTypeStdout)
+			}
+			defer func() { require.NoError(t, writer.Close()) }()
+			data := []byte("one line before a long wait\n")
+			_, err := writer.Write(data)
+			require.NoError(t, err)
+			require.Eventually(t, func() bool {
+				if step, ok := writer.(*coordreport.StepLogWriter); ok {
+					_ = step.FlushIfDue()
+				}
+				for _, chunk := range recovered.getSentChunks() {
+					if string(chunk.Data) == string(data) {
+						assert.Equal(t, uint64(0), chunk.GetByteOffset())
+						return true
+					}
+				}
+				return false
+			}, 8*time.Second, 50*time.Millisecond, "idle output should recover without another write or close")
+			require.NoError(t, writer.Close())
+			chunks := recovered.getSentChunks()
+			require.Len(t, chunks, 2)
+			assert.Equal(t, data, chunks[0].Data)
+			assert.True(t, chunks[1].IsFinal)
+			assert.Equal(t, uint64(len(data)), chunks[1].GetByteOffset())
+		})
+	}
+}
+
 func TestWrite_ExactThreshold(t *testing.T) {
 	t.Parallel()
 	mockStream := &mockStreamLogsClient{}
@@ -1783,6 +1839,43 @@ func TestSchedulerLogWriterRetriesSparseDataAfterStreamOpenFailure(t *testing.T)
 		return false
 	}, 8*time.Second, 10*time.Millisecond)
 	assert.GreaterOrEqual(t, openCount.Load(), int32(2))
+}
+
+func TestSchedulerCloseCancellationDuringReconnect(t *testing.T) {
+	opened := make(chan struct{})
+	var openOnce sync.Once
+	client := &logStreamerMockClient{
+		streamLogsFunc: func(ctx context.Context) (coordinatorv1.CoordinatorService_StreamLogsClient, error) {
+			openOnce.Do(func() { close(opened) })
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+	file, err := os.CreateTemp(t.TempDir(), "scheduler-*.log")
+	require.NoError(t, err)
+	defer func() { require.NoError(t, file.Close()) }()
+	streamer := coordreport.NewLogStreamer(client, "w", "r", "d", "a", ir.DAGRunRef{})
+	writer := streamer.NewSchedulerLogWriter(context.Background(), file)
+	_, err = writer.Write([]byte("pending scheduler output\n"))
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- writer.(interface{ CloseWithContext(context.Context) error }).CloseWithContext(ctx)
+	}()
+	select {
+	case <-opened:
+		cancel()
+	case <-time.After(5 * time.Second):
+		t.Fatal("scheduler close did not attempt pending delivery")
+	}
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(5 * time.Second):
+		t.Fatal("scheduler close did not stop after cancellation")
+	}
 }
 
 func TestStepFlushDoesNotWaitForBlockedSchedulerStream(t *testing.T) {

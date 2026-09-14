@@ -6,6 +6,7 @@ package chatbridge
 import (
 	"fmt"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/dagucloud/dagu/v2/internal/ir"
@@ -73,6 +74,33 @@ func TestNotificationBatcher_DuplicateStatusDoesNotDuplicateBatch(t *testing.T) 
 	assert.Equal(t, NotificationClassUrgent, ready.Batch.Class)
 	require.Len(t, ready.Batch.Events, 1)
 	assert.Equal(t, ir.Failed, ready.Batch.Events[0].Status.Status)
+}
+
+func TestNotificationBatcher_RequeueKeepsReadyBatch(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		const window = 10 * time.Millisecond
+		batcher := NewNotificationBatcher(window, window)
+		defer batcher.Stop()
+		event := testNotificationEvent(&ir.DAGRunStatus{
+			Name: "briefing", DAGRunID: "run-1", AttemptID: "a1", Status: ir.Failed,
+		})
+		require.True(t, batcher.Enqueue("dest-1", event))
+		select {
+		case <-batcher.ReadyC():
+		case <-time.After(time.Second):
+			t.Fatal("notification batch did not become ready")
+		}
+
+		require.True(t, batcher.Enqueue("dest-1", event))
+		ready := batcher.TakeReady()
+		require.Len(t, ready, 1, "requeueing a ready event must not restart its delay")
+		require.Len(t, ready[0].Batch.Events, 1)
+		assert.Equal(t, event.Key, ready[0].Batch.Events[0].Key)
+		time.Sleep(window)
+		synctest.Wait()
+		assert.Empty(t, batcher.TakeReady())
+	})
 }
 
 func TestNotificationBatcher_SkipsFailedRunWithAutoRetryRemaining(t *testing.T) {

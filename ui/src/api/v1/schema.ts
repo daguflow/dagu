@@ -1966,6 +1966,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/notification-channels/{channelId}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test notification channel
+         * @description Sends a sample failure notification to one saved channel, including disabled channels. Does not require a workflow or change notification rules. Developer, manager, or admin only.
+         */
+        post: operations["testNotificationChannel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/incident-providers": {
         parameters: {
             query?: never;
@@ -8105,7 +8125,10 @@ export interface operations {
                     noReuse?: boolean;
                     /** @description Additional labels to apply to the DAG-run. Mutually exclusive with `tags`; the server returns HTTP 400 if both are set. */
                     labels?: components["schemas"]["Labels"];
-                    /** @description Deprecated alias for `labels`; mutually exclusive with `labels`. */
+                    /**
+                     * @deprecated
+                     * @description Deprecated alias for `labels`; mutually exclusive with `labels`.
+                     */
                     tags?: components["schemas"]["Tags"];
                 };
             };
@@ -8186,7 +8209,10 @@ export interface operations {
                     noReuse?: boolean;
                     /** @description Additional labels to apply to the DAG-run. Mutually exclusive with `tags`; the server returns HTTP 400 if both are set. */
                     labels?: components["schemas"]["Labels"];
-                    /** @description Deprecated alias for `labels`; mutually exclusive with `labels`. */
+                    /**
+                     * @deprecated
+                     * @description Deprecated alias for `labels`; mutually exclusive with `labels`.
+                     */
                     tags?: components["schemas"]["Tags"];
                     /** @description Maximum seconds to wait for DAG execution to complete (required) */
                     timeout: number;
@@ -8280,7 +8306,10 @@ export interface operations {
                     noReuse?: boolean;
                     /** @description Additional labels to apply to the DAG-run. Mutually exclusive with `tags`; the server returns HTTP 400 if both are set. */
                     labels?: components["schemas"]["Labels"];
-                    /** @description Deprecated alias for `labels`; mutually exclusive with `labels`. */
+                    /**
+                     * @deprecated
+                     * @description Deprecated alias for `labels`; mutually exclusive with `labels`.
+                     */
                     tags?: components["schemas"]["Tags"];
                 };
             };
@@ -9079,7 +9108,10 @@ export interface operations {
                     noReuse?: boolean;
                     /** @description Additional labels to apply to the DAG-run. Mutually exclusive with `tags`; the server returns HTTP 400 if both are set. */
                     labels?: components["schemas"]["Labels"];
-                    /** @description Deprecated alias for `labels`; mutually exclusive with `labels`. */
+                    /**
+                     * @deprecated
+                     * @description Deprecated alias for `labels`; mutually exclusive with `labels`.
+                     */
                     tags?: components["schemas"]["Tags"];
                 };
             };
@@ -9161,7 +9193,10 @@ export interface operations {
                     noReuse?: boolean;
                     /** @description Additional labels to apply to the DAG-run. Mutually exclusive with `tags`; the server returns HTTP 400 if both are set. */
                     labels?: components["schemas"]["Labels"];
-                    /** @description Deprecated alias for `labels`; mutually exclusive with `labels`. */
+                    /**
+                     * @deprecated
+                     * @description Deprecated alias for `labels`; mutually exclusive with `labels`.
+                     */
                     tags?: components["schemas"]["Tags"];
                 };
             };
@@ -12761,6 +12796,58 @@ export interface operations {
             };
             /** @description Notification channel is used by a DAG */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unexpected error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    testNotificationChannel: {
+        parameters: {
+            query?: {
+                /** @description name of the remote node */
+                remoteNode?: components["parameters"]["RemoteNode"];
+            };
+            header?: never;
+            path: {
+                channelId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Channel test delivery attempted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestDAGNotificationResponse"];
+                };
+            };
+            /** @description Forbidden - insufficient permissions */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Notification channel not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

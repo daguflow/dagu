@@ -4,6 +4,87 @@
 import type { Locale } from '@/contexts/UserPreference';
 
 const english = {
+  'Incoming webhook': 'Incoming webhook',
+  'Bot destination': 'Bot destination',
+  'Webhook destination': 'Webhook destination',
+  'Channel actions for {channel}': 'Channel actions for {channel}',
+  'Delete channel': 'Delete channel',
+  '{count} channel': '{count} channel',
+  '{count} channels': '{count} channels',
+  'Create reusable destinations, then choose events in Rules.':
+    'Create reusable destinations, then choose events in Rules.',
+  'View rules': 'View rules',
+  'Search channels': 'Search channels',
+  'No matching channels': 'No matching channels',
+  'Try a different name or provider.': 'Try a different name or provider.',
+  'Add a channel to create your first notification destination.':
+    'Add a channel to create your first notification destination.',
+  'Edit channel': 'Edit channel',
+  'Save a destination, then use it in notification rules.':
+    'Save a destination, then use it in notification rules.',
+  'Create channel': 'Create channel',
+  'Email delivery': 'Email delivery',
+  'Shared sender for email channels.': 'Shared sender for email channels.',
+  'Configure email delivery before testing an email channel.':
+    'Configure email delivery before testing an email channel.',
+  'Adding a channel does not send notifications. Set up a rule to start delivery.':
+    'Adding a channel does not send notifications. Set up a rule to start delivery.',
+  'Go to Rules': 'Go to Rules',
+  'Choose where workflow updates go and when they are sent.':
+    'Choose where workflow updates go and when they are sent.',
+  'Applies to': 'Applies to',
+  'Global defaults': 'Global defaults',
+  'Used unless a workspace or workflow has its own rules.':
+    'Used unless a workspace or workflow has its own rules.',
+  'Workspace rules apply unless a workflow has its own rules.':
+    'Workspace rules apply unless a workflow has its own rules.',
+  'Add rule': 'Add rule',
+  'Choose a destination for this rule.': 'Choose a destination for this rule.',
+  'Every channel already has a rule. Edit an existing rule or create another channel.':
+    'Every channel already has a rule. Edit an existing rule or create another channel.',
+  'Rule for {channel}': 'Rule for {channel}',
+  'Rule actions for {channel}': 'Rule actions for {channel}',
+  'Delete rule': 'Delete rule',
+  'Notify on': 'Notify on',
+  'Send a notification when any selected event occurs.':
+    'Send a notification when any selected event occurs.',
+  'This channel is missing. Choose another destination.':
+    'This channel is missing. Choose another destination.',
+  'This channel is off. Enable it in Channels to receive notifications.':
+    'This channel is off. Enable it in Channels to receive notifications.',
+  'Test channel': 'Test channel',
+  'Sending...': 'Sending...',
+  'Sends a sample notification to this destination.':
+    'Sends a sample notification to this destination.',
+  'Test delivered': 'Test delivered',
+  'Delivery failed': 'Delivery failed',
+  'Failed to send test notification': 'Failed to send test notification',
+  'Inheriting Global rules': 'Inheriting Global rules',
+  'Workspace override': 'Workspace override',
+  'Configure workspace rules to choose different events or destinations.':
+    'Configure workspace rules to choose different events or destinations.',
+  'These rules replace Global defaults for this workspace.':
+    'These rules replace Global defaults for this workspace.',
+  'Configure workspace': 'Configure workspace',
+  'Use Global rules': 'Use Global rules',
+  'Notification rules': 'Notification rules',
+  '{count} rule': '{count} rule',
+  '{count} rules': '{count} rules',
+  'Rule settings': 'Rule settings',
+  'Turn off all rules': 'Turn off all rules',
+  'Turn on all rules': 'Turn on all rules',
+  'All rules are off for this scope. Notifications will not be sent.':
+    'All rules are off for this scope. Notifications will not be sent.',
+  'No notification rules yet': 'No notification rules yet',
+  'Add a rule to choose a destination and the events to send.':
+    'Add a rule to choose a destination and the events to send.',
+  'One rule per channel. Select multiple events for each destination.':
+    'One rule per channel. Select multiple events for each destination.',
+  'All changes saved': 'All changes saved',
+  'Rules take effect after saving.': 'Rules take effect after saving.',
+  'Global rules saved': 'Global rules saved',
+  'Workspace rules saved': 'Workspace rules saved',
+  'Workspace now inherits Global rules': 'Workspace now inherits Global rules',
   'Failed to resume the scheduler': 'Failed to resume the scheduler',
   'Failed to update the scheduler pause state': 'Failed to update the scheduler pause state',
   'Log options': 'Log options',
@@ -487,6 +568,8 @@ const english = {
   'e.g. production-server': 'e.g. production-server',
   'Each row groups this many days, scrolling back in time.':
     'Each row groups this many days, scrolling back in time.',
+  'Each channel can have one route per scope. Edit its events above, or add another channel.':
+    'Each channel can have one route per scope. Edit its events above, or add another channel.',
   Edit: 'Edit',
   'Edit API Key': 'Edit API Key',
   'Edit Profile': 'Edit Profile',
@@ -1290,6 +1373,8 @@ const english = {
   'Select an action to inspect its configuration.':
     'Select an action to inspect its configuration.',
   'Select an artifact': 'Select an artifact',
+  'Select at least one event before saving.':
+    'Select at least one event before saving.',
   'Select attribution': 'Select attribution',
   'Select channel': 'Select channel',
   'Select connection': 'Select connection',
@@ -2128,6 +2213,87 @@ export type StaticMessage = keyof typeof english;
 export type StaticTranslationValues = Record<string, string | number>;
 
 const chinese = {
+  'Incoming webhook': '传入 Webhook',
+  'Bot destination': '机器人通知目标',
+  'Webhook destination': 'Webhook 通知目标',
+  'Channel actions for {channel}': '{channel} 的通道操作',
+  'Delete channel': '删除通道',
+  '{count} channel': '{count} 个通道',
+  '{count} channels': '{count} 个通道',
+  'Create reusable destinations, then choose events in Rules.':
+    '创建可复用的通知目标，然后在“规则”中选择事件。',
+  'View rules': '查看规则',
+  'Search channels': '搜索通道',
+  'No matching channels': '没有匹配的通道',
+  'Try a different name or provider.': '请尝试其他名称或提供商。',
+  'Add a channel to create your first notification destination.':
+    '添加通道以创建第一个通知目标。',
+  'Edit channel': '编辑通道',
+  'Save a destination, then use it in notification rules.':
+    '保存通知目标，然后在通知规则中使用。',
+  'Create channel': '创建通道',
+  'Email delivery': '邮件发送',
+  'Shared sender for email channels.': '邮件通道共用的发件设置。',
+  'Configure email delivery before testing an email channel.':
+    '测试邮件通道前，请先配置邮件发送。',
+  'Adding a channel does not send notifications. Set up a rule to start delivery.':
+    '添加通道不会发送通知。请设置规则以开始发送。',
+  'Go to Rules': '前往规则',
+  'Choose where workflow updates go and when they are sent.':
+    '选择工作流通知的发送目标和触发时机。',
+  'Applies to': '适用范围',
+  'Global defaults': '全局默认规则',
+  'Used unless a workspace or workflow has its own rules.':
+    '工作区或工作流未配置独立规则时使用。',
+  'Workspace rules apply unless a workflow has its own rules.':
+    '工作流未配置独立规则时使用工作区规则。',
+  'Add rule': '添加规则',
+  'Choose a destination for this rule.': '为此规则选择通知目标。',
+  'Every channel already has a rule. Edit an existing rule or create another channel.':
+    '所有通道都已有规则。请编辑现有规则或创建其他通道。',
+  'Rule for {channel}': '{channel} 的规则',
+  'Rule actions for {channel}': '{channel} 的规则操作',
+  'Delete rule': '删除规则',
+  'Notify on': '通知事件',
+  'Send a notification when any selected event occurs.':
+    '发生任一所选事件时发送通知。',
+  'This channel is missing. Choose another destination.':
+    '此通道不存在。请选择其他通知目标。',
+  'This channel is off. Enable it in Channels to receive notifications.':
+    '此通道已关闭。请在“通道”中启用以接收通知。',
+  'Test channel': '测试通道',
+  'Sending...': '正在发送...',
+  'Sends a sample notification to this destination.':
+    '向此目标发送一条测试通知。',
+  'Test delivered': '测试通知已送达',
+  'Delivery failed': '发送失败',
+  'Failed to send test notification': '测试通知发送失败',
+  'Inheriting Global rules': '继承全局规则',
+  'Workspace override': '工作区覆盖规则',
+  'Configure workspace rules to choose different events or destinations.':
+    '配置工作区规则以选择不同的事件或通知目标。',
+  'These rules replace Global defaults for this workspace.':
+    '这些规则将替代此工作区的全局默认规则。',
+  'Configure workspace': '配置工作区',
+  'Use Global rules': '使用全局规则',
+  'Notification rules': '通知规则',
+  '{count} rule': '{count} 条规则',
+  '{count} rules': '{count} 条规则',
+  'Rule settings': '规则设置',
+  'Turn off all rules': '关闭所有规则',
+  'Turn on all rules': '启用所有规则',
+  'All rules are off for this scope. Notifications will not be sent.':
+    '此范围内的所有规则均已关闭，不会发送通知。',
+  'No notification rules yet': '尚无通知规则',
+  'Add a rule to choose a destination and the events to send.':
+    '添加规则以选择通知目标和要发送的事件。',
+  'One rule per channel. Select multiple events for each destination.':
+    '每个通道一条规则，可为每个目标选择多个事件。',
+  'All changes saved': '所有更改已保存',
+  'Rules take effect after saving.': '规则将在保存后生效。',
+  'Global rules saved': '全局规则已保存',
+  'Workspace rules saved': '工作区规则已保存',
+  'Workspace now inherits Global rules': '工作区现已继承全局规则',
   'Failed to resume the scheduler': '恢复调度器失败',
   'Failed to update the scheduler pause state': '更新调度器暂停状态失败',
   'Log options': '日志选项',
@@ -2602,6 +2768,8 @@ const chinese = {
   'e.g. production-server': '例如: production-server',
   'Each row groups this many days, scrolling back in time.':
     '每行分组这么多天，向后滚动时间。',
+  'Each channel can have one route per scope. Edit its events above, or add another channel.':
+    '每个通道在每个作用域内只能有一条路由。请在上方编辑事件，或添加另一个通道。',
   Edit: '编辑',
   'Edit API Key': '编辑 API 密钥',
   'Edit Profile': '编辑个人资料',
@@ -3384,6 +3552,7 @@ const chinese = {
   'Select all loaded workflows': '选择所有已加载工作流',
   'Select an action to inspect its configuration.': '选择操作以检查其配置。',
   'Select an artifact': '选择产物',
+  'Select at least one event before saving.': '保存前请至少选择一个事件。',
   'Select attribution': '选择归属',
   'Select channel': '选择频道',
   'Select connection': '选择连接',
@@ -4193,6 +4362,90 @@ const chinese = {
 } as const satisfies Record<StaticMessage, string>;
 
 const japanese = {
+  'Incoming webhook': '受信用 Webhook',
+  'Bot destination': 'Bot の通知先',
+  'Webhook destination': 'Webhook の通知先',
+  'Channel actions for {channel}': '{channel} のチャネル操作',
+  'Delete channel': 'チャネルを削除',
+  '{count} channel': '{count} 個のチャネル',
+  '{count} channels': '{count} 個のチャネル',
+  'Create reusable destinations, then choose events in Rules.':
+    '再利用できる通知先を作成し、「ルール」でイベントを選択します。',
+  'View rules': 'ルールを表示',
+  'Search channels': 'チャネルを検索',
+  'No matching channels': '一致するチャネルがありません',
+  'Try a different name or provider.':
+    '別の名前またはプロバイダーで検索してください。',
+  'Add a channel to create your first notification destination.':
+    'チャネルを追加して、最初の通知先を作成してください。',
+  'Edit channel': 'チャネルを編集',
+  'Save a destination, then use it in notification rules.':
+    '通知先を保存すると、通知ルールで使用できます。',
+  'Create channel': 'チャネルを作成',
+  'Email delivery': 'メール配信',
+  'Shared sender for email channels.': 'メールチャネルで共有する送信設定です。',
+  'Configure email delivery before testing an email channel.':
+    'メールチャネルをテストする前に、メール配信を設定してください。',
+  'Adding a channel does not send notifications. Set up a rule to start delivery.':
+    'チャネルの追加だけでは通知は送信されません。配信を開始するにはルールを設定してください。',
+  'Go to Rules': 'ルールへ',
+  'Choose where workflow updates go and when they are sent.':
+    'ワークフローの通知先と通知するタイミングを設定します。',
+  'Applies to': '適用範囲',
+  'Global defaults': 'グローバルのデフォルト',
+  'Used unless a workspace or workflow has its own rules.':
+    'ワークスペースやワークフローに個別のルールがない場合に適用されます。',
+  'Workspace rules apply unless a workflow has its own rules.':
+    'ワークフローに個別のルールがない場合にワークスペースのルールを適用します。',
+  'Add rule': 'ルールを追加',
+  'Choose a destination for this rule.':
+    'このルールの通知先を選択してください。',
+  'Every channel already has a rule. Edit an existing rule or create another channel.':
+    'すべてのチャネルにルールが設定されています。既存のルールを編集するか、別のチャネルを作成してください。',
+  'Rule for {channel}': '{channel} のルール',
+  'Rule actions for {channel}': '{channel} のルール操作',
+  'Delete rule': 'ルールを削除',
+  'Notify on': '通知するイベント',
+  'Send a notification when any selected event occurs.':
+    '選択したいずれかのイベントが発生したときに通知します。',
+  'This channel is missing. Choose another destination.':
+    'このチャネルは見つかりません。別の通知先を選択してください。',
+  'This channel is off. Enable it in Channels to receive notifications.':
+    'このチャネルは無効です。通知を受け取るには「チャネル」で有効にしてください。',
+  'Test channel': 'チャネルをテスト',
+  'Sending...': '送信中...',
+  'Sends a sample notification to this destination.':
+    'この通知先にテスト通知を送信します。',
+  'Test delivered': 'テスト通知を送信しました',
+  'Delivery failed': '送信に失敗しました',
+  'Failed to send test notification': 'テスト通知の送信に失敗しました',
+  'Inheriting Global rules': 'グローバルのルールを継承中',
+  'Workspace override': 'ワークスペースの個別設定',
+  'Configure workspace rules to choose different events or destinations.':
+    '異なるイベントや通知先を使用するには、ワークスペースのルールを設定してください。',
+  'These rules replace Global defaults for this workspace.':
+    'このワークスペースでは、グローバルのデフォルトの代わりにこれらのルールを適用します。',
+  'Configure workspace': 'ワークスペースを設定',
+  'Use Global rules': 'グローバルのルールを使用',
+  'Notification rules': '通知ルール',
+  '{count} rule': '{count} 件のルール',
+  '{count} rules': '{count} 件のルール',
+  'Rule settings': 'ルールの設定',
+  'Turn off all rules': 'すべてのルールを無効にする',
+  'Turn on all rules': 'すべてのルールを有効にする',
+  'All rules are off for this scope. Notifications will not be sent.':
+    'この範囲ではすべてのルールが無効です。通知は送信されません。',
+  'No notification rules yet': '通知ルールはまだありません',
+  'Add a rule to choose a destination and the events to send.':
+    'ルールを追加して、通知先と通知するイベントを選択してください。',
+  'One rule per channel. Select multiple events for each destination.':
+    'チャネルごとに1つのルールを設定できます。通知先ごとに複数のイベントを選択できます。',
+  'All changes saved': 'すべての変更を保存済み',
+  'Rules take effect after saving.': 'ルールは保存後に適用されます。',
+  'Global rules saved': 'グローバルのルールを保存しました',
+  'Workspace rules saved': 'ワークスペースのルールを保存しました',
+  'Workspace now inherits Global rules':
+    'ワークスペースにグローバルのルールを適用しました',
   'Failed to resume the scheduler': 'スケジューラの再開に失敗しました',
   'Failed to update the scheduler pause state': 'スケジューラの一時停止状態の更新に失敗しました',
   'Log options': 'ログ表示設定',
@@ -4678,6 +4931,8 @@ const japanese = {
   'e.g. production-server': '例: production-server',
   'Each row groups this many days, scrolling back in time.':
     '各行はこの日数をグループ化し、過去にスクロールします。',
+  'Each channel can have one route per scope. Edit its events above, or add another channel.':
+    '各スコープでチャネルごとに設定できるルートは1つです。上のイベントを編集するか、別のチャネルを追加してください。',
   Edit: '編集',
   'Edit API Key': 'APIキーを編集',
   'Edit Profile': 'プロフィールを編集',
@@ -5496,6 +5751,8 @@ const japanese = {
   'Select an action to inspect its configuration.':
     '設定を確認するにはアクションを選択してください。',
   'Select an artifact': '成果物を選択',
+  'Select at least one event before saving.':
+    '保存する前にイベントを1つ以上選択してください。',
   'Select attribution': '帰属を選択',
   'Select channel': 'チャネルを選択',
   'Select connection': '接続を選択',

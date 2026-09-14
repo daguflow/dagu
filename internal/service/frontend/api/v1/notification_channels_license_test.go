@@ -6,6 +6,8 @@ package api_test
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/dagucloud/dagu/v2/api/v1"
@@ -32,6 +34,66 @@ func TestNotificationChannels_AvailableWithoutLicense(t *testing.T) {
 	var result api.NotificationChannelListResponse
 	resp.Unmarshal(t, &result)
 	assert.Empty(t, result.Channels)
+}
+
+func TestNotificationChannels_TestDelivery(t *testing.T) {
+	t.Parallel()
+	var deliveries atomic.Int32
+	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		deliveries.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(destination.Close)
+	server := test.SetupServer(t)
+	created := server.Client().Post("/api/v1/notification-channels", api.NotificationChannelInput{
+		Name:    "Test destination",
+		Type:    api.NotificationProviderTypeWebhook,
+		Enabled: false,
+		Webhook: &api.NotificationWebhookTargetInput{
+			Url:                 new(destination.URL),
+			AllowInsecureHttp:   new(true),
+			AllowPrivateNetwork: new(true),
+		},
+	}).ExpectStatus(http.StatusCreated).Send(t)
+	var channel api.NotificationChannel
+	created.Unmarshal(t, &channel)
+
+	// Explicit delivery tests also work before a channel is enabled or routed.
+	response := server.Client().Post("/api/v1/notification-channels/"+channel.Id+"/test", nil).
+		ExpectStatus(http.StatusOK).Send(t)
+	var result api.TestDAGNotificationResponse
+	response.Unmarshal(t, &result)
+	require.Len(t, result.Results, 1)
+	assert.True(t, result.Results[0].Delivered)
+	assert.Equal(t, channel.Id, result.Results[0].TargetId)
+	assert.EqualValues(t, 1, deliveries.Load())
+}
+
+func TestNotificationChannels_TestMissing(t *testing.T) {
+	t.Parallel()
+	server := test.SetupServer(t)
+	server.Client().Post("/api/v1/notification-channels/missing/test", nil).
+		ExpectStatus(http.StatusNotFound).Send(t)
+}
+
+func TestNotificationChannels_TestFailure(t *testing.T) {
+	t.Parallel()
+	server := test.SetupServer(t)
+	created := server.Client().Post("/api/v1/notification-channels", api.NotificationChannelInput{
+		Name:    "Email without SMTP",
+		Type:    api.NotificationProviderTypeEmail,
+		Enabled: true,
+		Email:   &api.NotificationEmailTarget{To: []string{"alerts@example.com"}},
+	}).ExpectStatus(http.StatusCreated).Send(t)
+	var channel api.NotificationChannel
+	created.Unmarshal(t, &channel)
+	response := server.Client().Post("/api/v1/notification-channels/"+channel.Id+"/test", nil).
+		ExpectStatus(http.StatusOK).Send(t)
+	var result api.TestDAGNotificationResponse
+	response.Unmarshal(t, &result)
+	require.Len(t, result.Results, 1)
+	assert.False(t, result.Results[0].Delivered)
+	assert.NotEmpty(t, result.Results[0].Error)
 }
 
 func TestNotificationChannels_UnavailableWithoutEventStore(t *testing.T) {
