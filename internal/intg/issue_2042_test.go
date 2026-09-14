@@ -106,8 +106,10 @@ func TestIssue2042_EditedSuspendedScheduleDispatchesWithSkipIfSuccessful(t *test
 }
 
 func issue2042DAGSpec(name, schedule string) string {
+	// Schedule edits are tested against live slots, without startup replay.
 	return "name: " + name + "\n" +
 		"schedule: \"" + schedule + "\"\n" +
+		"catchup_window: \"\"\n" +
 		"skip_if_successful: true\n" +
 		"steps:\n" +
 		"  - command: echo issue-2042\n"
