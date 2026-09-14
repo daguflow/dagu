@@ -8123,7 +8123,10 @@ export interface operations {
                     noReuse?: boolean;
                     /** @description Additional labels to apply to the DAG-run. Mutually exclusive with `tags`; the server returns HTTP 400 if both are set. */
                     labels?: components["schemas"]["Labels"];
-                    /** @description Deprecated alias for `labels`; mutually exclusive with `labels`. */
+                    /**
+                     * @deprecated
+                     * @description Deprecated alias for `labels`; mutually exclusive with `labels`.
+                     */
                     tags?: components["schemas"]["Tags"];
                 };
             };
@@ -8204,7 +8207,10 @@ export interface operations {
                     noReuse?: boolean;
                     /** @description Additional labels to apply to the DAG-run. Mutually exclusive with `tags`; the server returns HTTP 400 if both are set. */
                     labels?: components["schemas"]["Labels"];
-                    /** @description Deprecated alias for `labels`; mutually exclusive with `labels`. */
+                    /**
+                     * @deprecated
+                     * @description Deprecated alias for `labels`; mutually exclusive with `labels`.
+                     */
                     tags?: components["schemas"]["Tags"];
                     /** @description Maximum seconds to wait for DAG execution to complete (required) */
                     timeout: number;
@@ -8298,7 +8304,10 @@ export interface operations {
                     noReuse?: boolean;
                     /** @description Additional labels to apply to the DAG-run. Mutually exclusive with `tags`; the server returns HTTP 400 if both are set. */
                     labels?: components["schemas"]["Labels"];
-                    /** @description Deprecated alias for `labels`; mutually exclusive with `labels`. */
+                    /**
+                     * @deprecated
+                     * @description Deprecated alias for `labels`; mutually exclusive with `labels`.
+                     */
                     tags?: components["schemas"]["Tags"];
                 };
             };
@@ -9097,7 +9106,10 @@ export interface operations {
                     noReuse?: boolean;
                     /** @description Additional labels to apply to the DAG-run. Mutually exclusive with `tags`; the server returns HTTP 400 if both are set. */
                     labels?: components["schemas"]["Labels"];
-                    /** @description Deprecated alias for `labels`; mutually exclusive with `labels`. */
+                    /**
+                     * @deprecated
+                     * @description Deprecated alias for `labels`; mutually exclusive with `labels`.
+                     */
                     tags?: components["schemas"]["Tags"];
                 };
             };
@@ -9179,7 +9191,10 @@ export interface operations {
                     noReuse?: boolean;
                     /** @description Additional labels to apply to the DAG-run. Mutually exclusive with `tags`; the server returns HTTP 400 if both are set. */
                     labels?: components["schemas"]["Labels"];
-                    /** @description Deprecated alias for `labels`; mutually exclusive with `labels`. */
+                    /**
+                     * @deprecated
+                     * @description Deprecated alias for `labels`; mutually exclusive with `labels`.
+                     */
                     tags?: components["schemas"]["Tags"];
                 };
             };

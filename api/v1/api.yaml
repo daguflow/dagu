@@ -1082,7 +1082,8 @@ paths:
                   type: string
                   description: "Optional DAG name override to use for the created dag-run"
                 profile:
-                  $ref: "#/components/schemas/RuntimeProfileOverride"
+                  allOf:
+                    - $ref: "#/components/schemas/RuntimeProfileOverride"
                   description: "Runtime profile override. Omit to use the DAG default profile, set to an empty string to run without a profile, or set to a profile name to override the DAG default."
                 singleton:
                   type: boolean
@@ -1093,10 +1094,13 @@ paths:
                   description: "If true, execute eligible build steps without reusing prior materializations"
                   default: false
                 labels:
-                  $ref: "#/components/schemas/Labels"
+                  allOf:
+                    - $ref: "#/components/schemas/Labels"
                   description: "Additional labels to apply to the DAG-run. Mutually exclusive with `tags`; the server returns HTTP 400 if both are set."
                 tags:
-                  $ref: "#/components/schemas/Tags"
+                  allOf:
+                    - $ref: "#/components/schemas/Tags"
+                  deprecated: true
                   description: "Deprecated alias for `labels`; mutually exclusive with `labels`."
       responses:
         "200":
@@ -1167,7 +1171,8 @@ paths:
                   type: string
                   description: "Optional DAG name override to use for the created dag-run"
                 profile:
-                  $ref: "#/components/schemas/RuntimeProfileOverride"
+                  allOf:
+                    - $ref: "#/components/schemas/RuntimeProfileOverride"
                   description: "Runtime profile override. Omit to use the DAG default profile, set to an empty string to run without a profile, or set to a profile name to override the DAG default."
                 singleton:
                   type: boolean
@@ -1178,10 +1183,13 @@ paths:
                   description: "If true, execute eligible build steps without reusing prior materializations"
                   default: false
                 labels:
-                  $ref: "#/components/schemas/Labels"
+                  allOf:
+                    - $ref: "#/components/schemas/Labels"
                   description: "Additional labels to apply to the DAG-run. Mutually exclusive with `tags`; the server returns HTTP 400 if both are set."
                 tags:
-                  $ref: "#/components/schemas/Tags"
+                  allOf:
+                    - $ref: "#/components/schemas/Tags"
+                  deprecated: true
                   description: "Deprecated alias for `labels`; mutually exclusive with `labels`."
                 timeout:
                   type: integer
@@ -1253,7 +1261,8 @@ paths:
                   type: string
                   description: "Optional DAG name override to use for the queued dag-run"
                 profile:
-                  $ref: "#/components/schemas/RuntimeProfileOverride"
+                  allOf:
+                    - $ref: "#/components/schemas/RuntimeProfileOverride"
                   description: "Runtime profile override. Omit to use the DAG default profile, set to an empty string to run without a profile, or set to a profile name to override the DAG default."
                 queue:
                   type: string
@@ -1267,10 +1276,13 @@ paths:
                   description: "If true, execute eligible build steps without reusing prior materializations"
                   default: false
                 labels:
-                  $ref: "#/components/schemas/Labels"
+                  allOf:
+                    - $ref: "#/components/schemas/Labels"
                   description: "Additional labels to apply to the DAG-run. Mutually exclusive with `tags`; the server returns HTTP 400 if both are set."
                 tags:
-                  $ref: "#/components/schemas/Tags"
+                  allOf:
+                    - $ref: "#/components/schemas/Tags"
+                  deprecated: true
                   description: "Deprecated alias for `labels`; mutually exclusive with `labels`."
       responses:
         "200":
@@ -1946,7 +1958,8 @@ paths:
                   type: string
                   description: "Optional name to use when the spec omits a name"
                 profile:
-                  $ref: "#/components/schemas/RuntimeProfileOverride"
+                  allOf:
+                    - $ref: "#/components/schemas/RuntimeProfileOverride"
                   description: "Runtime profile to apply to this DAG-run. Set to an empty string or omit to run without a profile."
                 params:
                   type: string
@@ -1964,10 +1977,13 @@ paths:
                   description: "If true, execute eligible build steps without reusing prior materializations"
                   default: false
                 labels:
-                  $ref: "#/components/schemas/Labels"
+                  allOf:
+                    - $ref: "#/components/schemas/Labels"
                   description: "Additional labels to apply to the DAG-run. Mutually exclusive with `tags`; the server returns HTTP 400 if both are set."
                 tags:
-                  $ref: "#/components/schemas/Tags"
+                  allOf:
+                    - $ref: "#/components/schemas/Tags"
+                  deprecated: true
                   description: "Deprecated alias for `labels`; mutually exclusive with `labels`."
               required:
                 - spec
@@ -2029,7 +2045,8 @@ paths:
                   type: string
                   description: "Optional name to use when the spec omits a name"
                 profile:
-                  $ref: "#/components/schemas/RuntimeProfileOverride"
+                  allOf:
+                    - $ref: "#/components/schemas/RuntimeProfileOverride"
                   description: "Runtime profile to apply to this queued DAG-run. Set to an empty string or omit to run without a profile."
                 params:
                   type: string
@@ -2050,10 +2067,13 @@ paths:
                   description: "If true, execute eligible build steps without reusing prior materializations"
                   default: false
                 labels:
-                  $ref: "#/components/schemas/Labels"
+                  allOf:
+                    - $ref: "#/components/schemas/Labels"
                   description: "Additional labels to apply to the DAG-run. Mutually exclusive with `tags`; the server returns HTTP 400 if both are set."
                 tags:
-                  $ref: "#/components/schemas/Tags"
+                  allOf:
+                    - $ref: "#/components/schemas/Tags"
+                  deprecated: true
                   description: "Deprecated alias for `labels`; mutually exclusive with `labels`."
               required:
                 - spec
@@ -11604,7 +11624,8 @@ components:
           type: string
           description: "DAG file identifier these settings apply to"
         profile:
-          $ref: "#/components/schemas/RuntimeProfileName"
+          allOf:
+            - $ref: "#/components/schemas/RuntimeProfileName"
           description: "Default runtime profile used when a DAG run does not provide an explicit profile override"
         updatedAt:
           type: string
@@ -11618,7 +11639,8 @@ components:
       description: "Request to replace DAG settings. Omit `profile` to clear the DAG default profile."
       properties:
         profile:
-          $ref: "#/components/schemas/RuntimeProfileName"
+          allOf:
+            - $ref: "#/components/schemas/RuntimeProfileName"
           description: "Default runtime profile used when a DAG run does not provide an explicit profile override"
 
     DAGNotificationSettings:
@@ -12286,7 +12308,8 @@ components:
           format: date-time
           description: "RFC 3339 timestamp with explicit offset for one-off schedules"
         profile:
-          $ref: "#/components/schemas/RuntimeProfileName"
+          allOf:
+            - $ref: "#/components/schemas/RuntimeProfileName"
           description: "Runtime profile name that activates this schedule entry"
 
     Status:
@@ -12954,7 +12977,8 @@ components:
           type: string
           description: "Runtime parameters passed to the DAG-run in JSON format"
         profileName:
-          $ref: "#/components/schemas/RuntimeProfileName"
+          allOf:
+            - $ref: "#/components/schemas/RuntimeProfileName"
           description: "Runtime profile selected for this DAG-run."
         workerId:
           type: string
@@ -13053,7 +13077,8 @@ components:
               type: boolean
               description: "Whether this DAG-run still has a usable source file on disk, so reschedule can load the current spec from that file instead of the stored historical YAML snapshot."
             sourceFileName:
-              $ref: "#/components/schemas/DAGFileName"
+              allOf:
+                - $ref: "#/components/schemas/DAGFileName"
               description: "File name of the source DAG definition, derived from the DAG-run's source file path. Only set when the source file still exists on disk. Can be used to navigate to the DAG definition page."
             humanTaskResumePending:
               type: boolean
@@ -15244,7 +15269,8 @@ components:
           format: date-time
           description: "When the conflict was detected"
         previousStatus:
-          $ref: "#/components/schemas/SyncStatus"
+          allOf:
+            - $ref: "#/components/schemas/SyncStatus"
           description: "Status before transitioning to missing"
         missingAt:
           type: string
@@ -15764,7 +15790,8 @@ components:
         description:
           type: string
         defaultProfile:
-          $ref: "#/components/schemas/RuntimeProfileOverride"
+          allOf:
+            - $ref: "#/components/schemas/RuntimeProfileOverride"
           description: "Workspace default runtime profile. Only valid for workspace defaults. Empty string clears the setting; omit to leave it unchanged."
 
     SetRuntimeProfileVariableRequest:
@@ -15871,7 +15898,8 @@ components:
         workspace:
           $ref: "#/components/schemas/WorkspaceName"
         defaultProfile:
-          $ref: "#/components/schemas/RuntimeProfileName"
+          allOf:
+            - $ref: "#/components/schemas/RuntimeProfileName"
           description: "Workspace default runtime profile used when a run and DAG do not select a profile."
         description:
           type: string
