@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/dagucloud/dagu/v2/internal/eventstore"
@@ -343,53 +344,55 @@ func TestNotificationMonitor_PollSourceRoutesEventsPerDestination(t *testing.T) 
 func TestNotificationMonitor_BootstrapDeliversStartupEvent(t *testing.T) {
 	t.Parallel()
 
-	store := &stubNotificationStore{}
-	service := eventstore.New(store)
+	synctest.Test(t, func(t *testing.T) {
+		store := &stubNotificationStore{}
+		service := eventstore.New(store)
 
-	delivered := make(chan struct{}, 1)
-	transport := &fakeNotificationTransport{
-		destinations: []string{"dest-1"},
-		flushFn: func(context.Context, string, NotificationBatch, bool) bool {
-			delivered <- struct{}{}
-			return true
-		},
-	}
-	cfg := DefaultNotificationMonitorConfig()
-	cfg.PollInterval = 10 * time.Millisecond
-	cfg.SeenEvictInterval = time.Hour
-	cfg.UrgentWindow = 10 * time.Millisecond
-	monitor := NewNotificationMonitor(
-		service,
-		filemonitor.NewStateStore(filepath.Join(t.TempDir(), "state.json")),
-		nil,
-		transport,
-		slog.New(slog.NewTextHandler(io.Discard, nil)),
-		cfg,
-	)
-	require.NoError(t, monitor.Bootstrap(context.Background()))
+		delivered := make(chan struct{}, 1)
+		transport := &fakeNotificationTransport{
+			destinations: []string{"dest-1"},
+			flushFn: func(context.Context, string, NotificationBatch, bool) bool {
+				delivered <- struct{}{}
+				return true
+			},
+		}
+		cfg := DefaultNotificationMonitorConfig()
+		cfg.PollInterval = 10 * time.Millisecond
+		cfg.SeenEvictInterval = time.Hour
+		cfg.UrgentWindow = 10 * time.Millisecond
+		monitor := NewNotificationMonitor(
+			service,
+			filemonitor.NewStateStore(filepath.Join(t.TempDir(), "state.json")),
+			nil,
+			transport,
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+			cfg,
+		)
+		require.NoError(t, monitor.Bootstrap(context.Background()))
 
-	status := &ir.DAGRunStatus{
-		Name:      "briefing",
-		DAGRunID:  "run-1",
-		AttemptID: "attempt-1",
-		Status:    ir.Failed,
-		Error:     "boom",
-	}
-	require.NoError(t, service.Emit(context.Background(), eventstore.NewDAGRunEvent(
-		eventstore.Source{Service: eventstore.SourceServiceScheduler},
-		eventstore.TypeDAGRunFailed,
-		status,
-		nil,
-	)))
+		status := &ir.DAGRunStatus{
+			Name:      "briefing",
+			DAGRunID:  "run-1",
+			AttemptID: "attempt-1",
+			Status:    ir.Failed,
+			Error:     "boom",
+		}
+		require.NoError(t, service.Emit(context.Background(), eventstore.NewDAGRunEvent(
+			eventstore.Source{Service: eventstore.SourceServiceScheduler},
+			eventstore.TypeDAGRunFailed,
+			status,
+			nil,
+		)))
 
-	stopMonitor := testutil.StartContextRunner(t, monitor)
-	defer stopMonitor()
+		stopMonitor := testutil.StartContextRunner(t, monitor)
+		defer stopMonitor()
 
-	select {
-	case <-delivered:
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for startup event delivery")
-	}
+		select {
+		case <-delivered:
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for startup event delivery")
+		}
+	})
 }
 
 func TestNotificationMonitor_PollSourceDeliversDistinctWaitingStates(t *testing.T) {

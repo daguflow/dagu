@@ -219,6 +219,18 @@ func (b *NotificationBatcher) Enqueue(destination string, event NotificationEven
 		return false
 	}
 
+	// Polling can requeue durable pending events before ready batches are sent.
+	for _, pending := range b.ready {
+		if pending.Destination != destination {
+			continue
+		}
+		for _, existing := range pending.Batch.Events {
+			if existing.Key == snapshot.Key && NotificationRunKey(existing.Status) == runKey {
+				return true
+			}
+		}
+	}
+
 	if existingBucketKey, ok := b.runIndex[destRunKey]; ok {
 		if existingBucket := b.buckets[existingBucketKey]; existingBucket != nil {
 			if existingEvent, exists := existingBucket.events[runKey]; exists {
