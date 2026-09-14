@@ -181,6 +181,16 @@ func registerResources(server *mcpsdk.Server, svc *Service) {
 		MIMEType:    resourceMIMEJSON,
 	}, svc.readResource)
 
+	// Resource reads resolve by exact URI first and by template second, so the
+	// collection needs a template to serve the filtered form as well.
+	server.AddResourceTemplate(&mcpsdk.ResourceTemplate{
+		URITemplate: "dagu://dags{?page,perPage,name,labels,active,sort,order}",
+		Name:        "dags_query",
+		Title:       "DAGs (filtered)",
+		Description: "DAG summaries visible to the caller, narrowed by list filters.",
+		MIMEType:    resourceMIMEJSON,
+	}, svc.readResource)
+
 	server.AddResourceTemplate(&mcpsdk.ResourceTemplate{
 		URITemplate: "dagu://dags/{name}/spec",
 		Name:        "dag_spec",

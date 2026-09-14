@@ -808,6 +808,21 @@ func TestDAGsCollectionResource(t *testing.T) {
 	require.Contains(t, read.Contents[0].Text, `"uri":"dagu://dags/alt-dag/spec"`)
 	require.Contains(t, read.Contents[0].Text, `"name":"main-dag"`)
 	require.Contains(t, read.Contents[0].Text, `"uri":"dagu://dags/main-dag/spec"`)
+
+	filtered, err := session.ReadResource(ctx, &mcpsdk.ReadResourceParams{
+		URI: readResourceDAGsCollectionURI + "?name=alt-dag&perPage=20",
+	})
+	require.NoError(t, err)
+	require.Len(t, filtered.Contents, 1)
+	require.Equal(t, resourceMIMEJSON, filtered.Contents[0].MIMEType)
+	require.Contains(t, filtered.Contents[0].Text, `"name":"alt-dag"`)
+	require.NotContains(t, filtered.Contents[0].Text, `"name":"main-dag"`)
+
+	// Serving the filtered form must not widen the accepted parameter set.
+	_, err = session.ReadResource(ctx, &mcpsdk.ReadResourceParams{
+		URI: readResourceDAGsCollectionURI + "?bogus=1",
+	})
+	require.Error(t, err)
 }
 
 func TestReadToolCanReadReferenceResource(t *testing.T) {
