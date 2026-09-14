@@ -480,7 +480,10 @@ func resourceAuditDetails(rawURI string) map[string]any {
 				resourceID = segments[0]
 			}
 		case "runs":
-			resourceType = "dag_run"
+			resourceType = "runs"
+			if len(segments) > 0 {
+				resourceType = "dag_run"
+			}
 			if isStepLogResourceSegments(segments) {
 				resourceType = "dag_run_step_log"
 				resourceID = segments[0] + "/" + segments[1] + "/" + segments[3]

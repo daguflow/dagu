@@ -163,6 +163,14 @@ func registerResources(server *mcpsdk.Server, svc *Service) {
 		MIMEType:    mcpAppMIMEType,
 	}, svc.readResource)
 
+	server.AddResource(&mcpsdk.Resource{
+		URI:         readResourceReferenceCollectionURI,
+		Name:        "dagu_references",
+		Title:       "Dagu references",
+		Description: "Available built-in MCP reference resources.",
+		MIMEType:    resourceMIMEJSON,
+	}, svc.readResource)
+
 	for _, ref := range referenceResources() {
 		server.AddResource(&mcpsdk.Resource{
 			URI:         ref.uri,
@@ -181,13 +189,13 @@ func registerResources(server *mcpsdk.Server, svc *Service) {
 		MIMEType:    resourceMIMEJSON,
 	}, svc.readResource)
 
-	// Resource reads resolve by exact URI first and by template second, so the
-	// collection needs a template to serve the filtered form as well.
+	// Reserved expansion lets valid query characters such as '+' and '*'
+	// reach the collection's query validator.
 	server.AddResourceTemplate(&mcpsdk.ResourceTemplate{
-		URITemplate: "dagu://dags{?page,perPage,name,labels,active,sort,order}",
+		URITemplate: "dagu://dags?{+query}",
 		Name:        "dags_query",
 		Title:       "DAGs (filtered)",
-		Description: "DAG summaries visible to the caller, narrowed by list filters.",
+		Description: "DAG summaries visible to the caller. query is a URL query string accepted by dagu_read target=dags.",
 		MIMEType:    resourceMIMEJSON,
 	}, svc.readResource)
 
@@ -221,6 +229,24 @@ func registerResources(server *mcpsdk.Server, svc *Service) {
 		Title:       "Wiki page",
 		Description: "Current Markdown content for a Wiki page in default or one named workspace. Nested paths are encoded as one URI segment.",
 		MIMEType:    resourceMIMEText,
+	}, svc.readResource)
+
+	server.AddResource(&mcpsdk.Resource{
+		URI:         readResourceRunsCollectionURI,
+		Name:        "dag_runs",
+		Title:       "DAG-runs",
+		Description: "DAG-run summaries visible to the caller.",
+		MIMEType:    resourceMIMEJSON,
+	}, svc.readResource)
+
+	// The SDK matches registered resources by exact URI, so query-bearing
+	// reads of the collection route through this template instead.
+	server.AddResourceTemplate(&mcpsdk.ResourceTemplate{
+		URITemplate: "dagu://runs?{+query}",
+		Name:        "dag_runs_filtered",
+		Title:       "Filtered DAG-runs",
+		Description: "DAG-run summaries visible to the caller. query is a URL query string accepted by dagu_read target=runs. status may be repeated.",
+		MIMEType:    resourceMIMEJSON,
 	}, svc.readResource)
 
 	server.AddResourceTemplate(&mcpsdk.ResourceTemplate{
@@ -699,6 +725,16 @@ func (svc *Service) readResourceText(ctx context.Context, rawURI string) (string
 
 	switch parsed.Host {
 	case "reference":
+		if len(segments) == 0 {
+			if parsed.RawQuery != "" {
+				return "", "", mcpsdk.ResourceNotFoundError(rawURI)
+			}
+			text, err := jsonText(readReferenceCollection())
+			if err != nil {
+				return "", "", err
+			}
+			return text, resourceMIMEJSON, nil
+		}
 		if len(segments) != 1 {
 			return "", "", mcpsdk.ResourceNotFoundError(rawURI)
 		}
@@ -762,6 +798,27 @@ func (svc *Service) readResourceText(ctx context.Context, rawURI string) (string
 		}
 		return text, resourceMIMEJSON, nil
 	case "runs":
+		if len(segments) == 0 {
+			if readErr := validateReadQuery(readTargetRuns, parsed.RawQuery, true, rawURI); readErr != nil {
+				return "", "", mcpsdk.ResourceNotFoundError(rawURI)
+			}
+			if err := svc.requireAPI(); err != nil {
+				return "", "", err
+			}
+			raw, err := svc.api.GetDAGRunsListData(ctx, parsed.RawQuery)
+			if err != nil {
+				return "", "", err
+			}
+			data, err := normalizeRunList(raw)
+			if err != nil {
+				return "", "", err
+			}
+			text, err := jsonText(data)
+			if err != nil {
+				return "", "", err
+			}
+			return text, resourceMIMEJSON, nil
+		}
 		if !isRunResourceSegments(segments) && !isStepLogResourceSegments(segments) &&
 			!isSubRunResourceSegments(segments) && !isSubStepLogResourceSegments(segments) {
 			return "", "", mcpsdk.ResourceNotFoundError(rawURI)
