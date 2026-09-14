@@ -4,9 +4,12 @@
 package spec006_env_test
 
 import (
+	"os/exec"
+	"runtime"
 	"testing"
 
 	"github.com/dagucloud/dagu/v2/conformance/harness"
+	"github.com/stretchr/testify/require"
 )
 
 func TestValidate(t *testing.T) {
@@ -198,6 +201,7 @@ func TestRuntime(t *testing.T) {
 		args    []string
 		output  string
 		content string
+		setup   func(*testing.T, *harness.Runner)
 	}{
 		{
 			name:    "env declaration forms preserve order",
@@ -266,6 +270,7 @@ func TestRuntime(t *testing.T) {
 			file:    "direct_execution_env_expansion.yaml",
 			output:  "direct-exec.txt",
 			content: "api ${MISSING}\n",
+			setup:   buildArgWriter,
 		},
 	}
 	for _, tc := range cases {
@@ -273,6 +278,9 @@ func TestRuntime(t *testing.T) {
 			t.Parallel()
 
 			dagu := harness.NewRunner(t)
+			if tc.setup != nil {
+				tc.setup(t, dagu)
+			}
 			args := tc.args
 			if len(args) == 0 {
 				args = []string{"start", tc.file}
@@ -345,6 +353,7 @@ func TestRuntime(t *testing.T) {
 		t.Parallel()
 
 		dagu := harness.NewRunner(t)
+		buildArgWriter(t, dagu)
 		result := dagu.RunWithEnv(
 			[]string{"DIRECT_PROCESS_ONLY=from-process"},
 			"start",
@@ -366,4 +375,18 @@ func TestRuntime(t *testing.T) {
 		result.ExpectExitCode(0)
 		dagu.ExpectFileContent("action-with-env.txt", "$ACTION_PROCESS_ONLY\n${ACTION_PROCESS_ONLY}\n")
 	})
+}
+
+// Compile outside the workflow timeout so direct execution tests measure
+// environment resolution independently of a cold Go build cache.
+func buildArgWriter(t *testing.T, dagu *harness.Runner) {
+	t.Helper()
+
+	name := "write_arg"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	cmd := exec.CommandContext(t.Context(), "go", "build", "-o", dagu.ProjectPath(name), "testdata/write_arg.go")
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, "%s", output)
 }
