@@ -212,11 +212,7 @@ func (svc *Service) readToolImpl(ctx context.Context, input readInput) (*mcpsdk.
 		data = map[string]any{"text": ref.text, "mimeType": resourceMIMEText}
 	case readTargetDAGs:
 		if err = svc.requireAPI(); err == nil {
-			var raw any
-			raw, err = svc.api.GetDAGsListDataIncludingAltDirs(ctx, input.Query)
-			if err == nil {
-				data, err = normalizeDAGList(raw)
-			}
+			data, err = svc.listDAGs(ctx, input.Query)
 		}
 	case readTargetDAG:
 		if err = svc.requireAPI(); err == nil {
@@ -1021,7 +1017,7 @@ func validReadQueryValue(target, key, value string) bool {
 		case "page":
 			return validIntRange(value, 1, 0)
 		case "perPage":
-			return validIntRange(value, 1, 1000)
+			return validIntRange(value, 1, 200)
 		case "name":
 			return value != ""
 		case "labels":
