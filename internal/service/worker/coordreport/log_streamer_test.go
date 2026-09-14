@@ -1841,6 +1841,43 @@ func TestSchedulerLogWriterRetriesSparseDataAfterStreamOpenFailure(t *testing.T)
 	assert.GreaterOrEqual(t, openCount.Load(), int32(2))
 }
 
+func TestSchedulerCloseCancellationDuringReconnect(t *testing.T) {
+	opened := make(chan struct{})
+	var openOnce sync.Once
+	client := &logStreamerMockClient{
+		streamLogsFunc: func(ctx context.Context) (coordinatorv1.CoordinatorService_StreamLogsClient, error) {
+			openOnce.Do(func() { close(opened) })
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+	file, err := os.CreateTemp(t.TempDir(), "scheduler-*.log")
+	require.NoError(t, err)
+	defer func() { require.NoError(t, file.Close()) }()
+	streamer := coordreport.NewLogStreamer(client, "w", "r", "d", "a", ir.DAGRunRef{})
+	writer := streamer.NewSchedulerLogWriter(context.Background(), file)
+	_, err = writer.Write([]byte("pending scheduler output\n"))
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- writer.(interface{ CloseWithContext(context.Context) error }).CloseWithContext(ctx)
+	}()
+	select {
+	case <-opened:
+		cancel()
+	case <-time.After(5 * time.Second):
+		t.Fatal("scheduler close did not attempt pending delivery")
+	}
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(5 * time.Second):
+		t.Fatal("scheduler close did not stop after cancellation")
+	}
+}
+
 func TestStepFlushDoesNotWaitForBlockedSchedulerStream(t *testing.T) {
 	sendStarted := make(chan struct{})
 	releaseSend := make(chan struct{})

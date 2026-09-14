@@ -610,6 +610,7 @@ func toProtoStreamType(streamType int) coordinatorv1.LogStreamType {
 type schedulerLogWriter struct {
 	parentCtx         context.Context
 	ctx               context.Context
+	cancelMu          sync.Mutex
 	cancel            context.CancelFunc
 	streamer          *LogStreamer
 	localFile         *os.File
@@ -632,6 +633,8 @@ type schedulerLogWriter struct {
 }
 
 func (w *schedulerLogWriter) cancelStream() {
+	w.cancelMu.Lock()
+	defer w.cancelMu.Unlock()
 	if w.cancel != nil {
 		w.cancel()
 	}
@@ -847,7 +850,9 @@ func (w *schedulerLogWriter) resetStreamLocked() {
 	w.cancelStream()
 	w.stream = nil
 	w.streamedBytes = w.acknowledgedBytes
+	w.cancelMu.Lock()
 	w.ctx, w.cancel = context.WithCancel(w.parentCtx)
+	w.cancelMu.Unlock()
 }
 
 func (w *schedulerLogWriter) withOperationTimeout(operation func() error) error {
@@ -930,9 +935,7 @@ func (w *schedulerLogWriter) close(ctx context.Context) error {
 
 	w.parentCtx = ctx
 	if w.stream == nil {
-		w.cancelStream()
-		w.ctx, w.cancel = context.WithCancel(ctx)
-		w.streamedBytes = w.acknowledgedBytes
+		w.resetStreamLocked()
 	}
 
 	return backoff.Retry(ctx, func(context.Context) error {
