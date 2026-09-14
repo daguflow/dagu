@@ -317,6 +317,16 @@ func registerPrompts(server *mcpsdk.Server) {
 	}, promptDebugRun)
 }
 
+// listDAGs returns the normalized DAG collection model, including DAGs
+// discovered under the alternate DAGs directory.
+func (svc *Service) listDAGs(ctx context.Context, query string) (map[string]any, error) {
+	raw, err := svc.api.GetDAGsListDataIncludingAltDirs(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	return normalizeDAGList(raw)
+}
+
 func (svc *Service) getDAGSpec(ctx context.Context, name string) (map[string]any, error) {
 	resp, err := svc.api.GetDAGSpec(ctx, daguapi.GetDAGSpecRequestObject{
 		FileName: daguapi.DAGFileName(name),
@@ -705,11 +715,7 @@ func (svc *Service) readResourceText(ctx context.Context, rawURI string) (string
 			if err := svc.requireAPI(); err != nil {
 				return "", "", err
 			}
-			raw, err := svc.api.GetDAGsListDataIncludingAltDirs(ctx, parsed.RawQuery)
-			if err != nil {
-				return "", "", err
-			}
-			data, err := normalizeDAGList(raw)
+			data, err := svc.listDAGs(ctx, parsed.RawQuery)
 			if err != nil {
 				return "", "", err
 			}
