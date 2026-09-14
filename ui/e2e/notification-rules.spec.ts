@@ -81,7 +81,11 @@ test('edits notification events and adds a route', async ({
     const failed = page.getByRole('checkbox', { name: 'Failed', exact: true });
     await failed.press('Space');
     await expect(failed).toBeChecked();
-    await page.getByRole('button', { name: 'Add another route' }).click();
+    await page.getByRole('button', { name: 'Add rule', exact: true }).click();
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: new RegExp(channels[1]!.name) })
+      .click();
     await expect(
       page.getByRole('switch', {
         name: `Toggle ${channels[1]!.name}`,
@@ -107,8 +111,33 @@ test('edits notification events and adds a route', async ({
       })
     ).toBeChecked();
     await expect(
-      page.getByRole('link', { name: 'Add channel', exact: true })
+      page.getByText('All changes saved', { exact: true })
     ).toBeVisible();
+    await page.getByRole('button', { name: 'Add rule', exact: true }).click();
+    await expect(
+      page
+        .getByRole('dialog')
+        .getByRole('link', { name: 'Add channel', exact: true })
+    ).toBeVisible();
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(
+      page.getByRole('checkbox', { name: 'Failed', exact: true }).first()
+    ).toBeVisible();
+    await page
+      .getByRole('checkbox', { name: 'Failed', exact: true })
+      .first()
+      .uncheck();
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(
+      page.getByRole('checkbox', { name: 'Failed', exact: true }).first()
+    ).toBeChecked();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth
+      )
+    ).toBe(true);
 
     const savedResponse = await request.get(routesURL, { headers });
     const savedRoutes = await savedResponse.json();

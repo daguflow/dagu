@@ -3,6 +3,9 @@
 
 import {
   AlertTriangle,
+  Bell,
+  MoreHorizontal,
+  Send,
   Building2,
   CheckCircle2,
   Globe2,
@@ -10,11 +13,16 @@ import {
   Loader2,
   Mail,
   Plus,
-  Route as RouteIcon,
   Save,
   Trash2,
 } from 'lucide-react';
-import { type ReactElement, useContext, useEffect, useState } from 'react';
+import {
+  type ReactElement,
+  useContext,
+  useEffect,
+  useId,
+  useState,
+} from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -32,6 +40,20 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 import { AppBarContext } from '@/contexts/AppBarContext';
 import { useClient, useQuery } from '@/hooks/api';
 import { whenEnabled } from '@/hooks/queryUtils';
@@ -240,19 +262,6 @@ function routeSetInput(draft: DraftRouteSet): NotificationRouteSetInput {
   };
 }
 
-function blankRoute(
-  channels: DraftChannel[],
-  usedChannelIds = new Set<string>()
-): DraftRoute {
-  return {
-    channelId:
-      channels.find((channel) => channel.id && !usedChannelIds.has(channel.id))
-        ?.id || '',
-    enabled: true,
-    events: [...DEFAULT_ROUTE_EVENTS],
-  };
-}
-
 function smtpInput(draft: SMTPDraft) {
   const oauthDestination = smtpOAuthDestinations[draft.oauthProvider];
   const hasSMTP =
@@ -393,756 +402,526 @@ export default function NotificationsPage(): ReactElement {
   );
 }
 
-function eventLabel(value: NotificationEventType): string {
-  return (
-    EVENT_OPTIONS.find((event) => event.value === value)?.label || String(value)
-  );
-}
-
-function eventChipClass(
-  value: NotificationEventType,
-  checked: boolean
-): string {
-  if (!checked) {
-    return 'border-border bg-transparent text-muted-foreground';
-  }
-
-  switch (value) {
-    case NotificationEventType.dag_run_succeeded:
-      return 'status-success';
-    case NotificationEventType.dag_run_partially_succeeded:
-      return 'status-warning';
-    case NotificationEventType.dag_run_failed:
-      return 'status-failed';
-    case NotificationEventType.dag_run_aborted:
-    case NotificationEventType.dag_run_rejected:
-      return 'status-aborted';
-    case NotificationEventType.dag_run_waiting:
-      return 'status-running';
-    default:
-      return 'status-neutral';
-  }
-}
-
 function channelLabel(channel?: DraftChannel, fallback?: string): string {
-  if (channel?.name) {
-    return channel.name;
-  }
-  if (channel?.type) {
-    return providerLabel(channel.type);
-  }
-  return fallback || 'Missing channel';
-}
-
-function routeStateLabel(route: DraftRoute, channel?: DraftChannel): string {
-  if (!route.enabled) return 'Route off';
-  if (!channel) return 'Missing channel';
-  if (!channel.enabled) return 'Channel off';
-  return 'On';
-}
-
-function hasUnusedChannel(
-  channels: DraftChannel[],
-  routes: DraftRoute[]
-): boolean {
-  const usedChannelIds = new Set(routes.map((route) => route.channelId));
-  return channels.some(
-    (channel) => channel.id && !usedChannelIds.has(channel.id)
+  return (
+    channel?.name ||
+    (channel?.type ? providerLabel(channel.type) : fallback) ||
+    'Missing channel'
   );
 }
 
-type NotificationRulesHeaderProps = {
-  canAddRoute: boolean;
-  canSave: boolean;
-  saving: boolean;
-  onAddRoute: () => void;
-  onSave: () => void;
-};
-
-function NotificationRulesHeader({
-  canAddRoute,
-  canSave,
-  saving,
-  onAddRoute,
-  onSave,
-}: NotificationRulesHeaderProps) {
+function sameRouteSet(left: DraftRouteSet, right: DraftRouteSet): boolean {
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-normal text-foreground">
-            <I18nText text={'Notification Rules'} />
+    left.enabled === right.enabled &&
+    left.inheritGlobal === right.inheritGlobal &&
+    left.routes.length === right.routes.length &&
+    left.routes.every((route, index) => {
+      const other = right.routes[index];
+      return (
+        !!other &&
+        other.id === route.id &&
+        other.channelId === route.channelId &&
+        other.enabled === route.enabled &&
+        sameEvents(route.events, other.events)
+      );
+    })
+  );
+}
+
+function NotificationHeader({
+  activeTab = 'rules',
+}: {
+  activeTab?: 'rules' | 'channels';
+}) {
+  return (
+    <header className="space-y-7">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="space-y-2">
+          <h1 className="text-[30px] font-semibold leading-tight tracking-tight text-foreground">
+            <I18nText text={'Notifications'} />
           </h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-base text-muted-foreground">
             <I18nText
-              text={
-                'Global rules apply by default. Workspace and DAG settings override them only when configured.'
-              }
+              text={'Choose where workflow updates go and when they are sent.'}
             />
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onAddRoute}
-            disabled={!canAddRoute}
-          >
-            <Plus className="h-4 w-4" />
-            <I18nText text={'Add route'} />
+        {activeTab === 'rules' && (
+          <Button asChild variant="outline" className="h-10 text-base">
+            <Link to="/notification-channels">
+              <Mail className="size-4" />
+              <I18nText text={'Manage channels'} />
+            </Link>
           </Button>
-          <Button size="sm" onClick={onSave} disabled={saving || !canSave}>
-            {saving ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4" />
-            )}
-            <I18nText text={'Save changes'} />
-          </Button>
-        </div>
+        )}
       </div>
+      <nav
+        aria-label="Notifications"
+        className="flex gap-6 border-b border-border"
+      >
+        {(['rules', 'channels'] as const).map((tab) => {
+          const Icon = tab === 'rules' ? Bell : Mail;
+          return (
+            <Link
+              key={tab}
+              to={
+                tab === 'rules'
+                  ? '/notification-rules'
+                  : '/notification-channels'
+              }
+              aria-current={activeTab === tab ? 'page' : undefined}
+              className={cn(
+                'inline-flex items-center gap-2 border-b-2 px-2 pb-3 text-base font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                activeTab === tab
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              )}
+            >
+              <Icon className="size-5" />
+              <I18nText text={tab === 'rules' ? 'Rules' : 'Channels'} />
+            </Link>
+          );
+        })}
+      </nav>
+    </header>
+  );
+}
 
-      <div className="flex items-center gap-1 border-b border-border">
-        <span className="inline-flex h-10 items-center gap-2 border-b-2 border-primary px-3 text-sm font-medium text-foreground">
-          <RouteIcon className="h-4 w-4 text-primary" />
-          <I18nText text={'Rules'} />
-        </span>
-        <Link
-          to="/notification-channels"
-          className="inline-flex h-10 items-center gap-2 border-b-2 border-transparent px-3 text-sm font-medium text-muted-foreground hover:text-foreground"
+function ScopeSelector({
+  activeScope,
+  workspaceName,
+  disabled,
+  onChange,
+}: {
+  activeScope: RouteScopeKey;
+  workspaceName: string;
+  disabled: boolean;
+  onChange: (scope: RouteScopeKey) => void;
+}) {
+  const { ts } = useI18n();
+  const scopeId = useId();
+  return (
+    <div className="grid gap-2 sm:grid-cols-[auto_1fr] sm:gap-x-6">
+      <label htmlFor={scopeId} className="text-base font-medium sm:pt-3">
+        <I18nText text={'Applies to'} />
+      </label>
+      <div className="space-y-2">
+        <Select
+          value={activeScope}
+          disabled={disabled}
+          onValueChange={(value) => onChange(value as RouteScopeKey)}
         >
-          <Mail className="h-4 w-4" />
-          <I18nText text={'Channels'} />
-        </Link>
+          <SelectTrigger
+            id={scopeId}
+            className="h-11 w-full max-w-sm text-base"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="global">
+              <Globe2 className="size-4" />
+              <I18nText text={'Global defaults'} />
+            </SelectItem>
+            {workspaceName && (
+              <SelectItem value="workspace">
+                <Building2 className="size-4" />
+                {ts('{workspace} workspace', { workspace: workspaceName })}
+              </SelectItem>
+            )}
+          </SelectContent>
+        </Select>
+        <p className="text-sm text-muted-foreground">
+          <I18nText
+            text={
+              activeScope === 'global'
+                ? 'Used unless a workspace or workflow has its own rules.'
+                : 'Workspace rules apply unless a workflow has its own rules.'
+            }
+          />
+        </p>
       </div>
     </div>
   );
 }
 
-type ScopeSelectorProps = {
-  activeScope: RouteScopeKey;
-  workspaceName: string;
-  canConfigureWorkspaceRoutes: boolean;
-  globalRoutes: DraftRouteSet;
-  workspaceRoutes: DraftRouteSet;
-  onChange: (scope: RouteScopeKey) => void;
-};
-
-function ScopeSelector({
-  activeScope,
-  workspaceName,
-  canConfigureWorkspaceRoutes,
-  globalRoutes,
-  workspaceRoutes,
-  onChange,
-}: ScopeSelectorProps) {
-  return (
-    <Card className="self-start">
-      <CardHeader>
-        <CardTitle className="text-sm">
-          <I18nText text={'1. Scope'} />
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <button
-          type="button"
-          onClick={() => onChange('global')}
-          className={cn(
-            'w-full rounded-md border px-3 py-3 text-left transition-colors',
-            activeScope === 'global'
-              ? 'border-primary bg-primary/10'
-              : 'border-border hover:bg-muted'
-          )}
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 font-medium">
-              <Globe2 className="h-4 w-4 text-muted-foreground" />
-              <I18nText text={'Global'} />
-            </div>
-            <Badge variant={globalRoutes.enabled ? 'success' : 'default'}>
-              {globalRoutes.routes.length}
-            </Badge>
-          </div>
-          <p className="mt-2 text-xs leading-5 text-muted-foreground">
-            <I18nText
-              text={
-                'Default for every DAG unless a workspace or DAG is configured.'
-              }
-            />
-          </p>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => canConfigureWorkspaceRoutes && onChange('workspace')}
-          disabled={!canConfigureWorkspaceRoutes}
-          className={cn(
-            'w-full rounded-md border px-3 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60',
-            activeScope === 'workspace'
-              ? 'border-primary bg-primary/10'
-              : 'border-border hover:bg-muted'
-          )}
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2 font-medium">
-              <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <span className="truncate">
-                {workspaceName ? (
-                  <I18nText
-                    text="{workspace} workspace"
-                    values={{ workspace: workspaceName }}
-                  />
-                ) : (
-                  <I18nText text={'This workspace'} />
-                )}
-              </span>
-            </div>
-            <Badge
-              variant={
-                canConfigureWorkspaceRoutes &&
-                !workspaceRoutes.inheritGlobal &&
-                workspaceRoutes.enabled
-                  ? 'success'
-                  : 'default'
-              }
-            >
-              {canConfigureWorkspaceRoutes ? (
-                workspaceRoutes.inheritGlobal ? (
-                  <I18nText text={'Inherit'} />
-                ) : (
-                  workspaceRoutes.routes.length
-                )
-              ) : (
-                '-'
-              )}
-            </Badge>
-          </div>
-          <p className="mt-2 text-xs leading-5 text-muted-foreground">
-            {canConfigureWorkspaceRoutes ? (
-              workspaceRoutes.inheritGlobal ? (
-                <I18nText text={'Uses Global until configured.'} />
-              ) : (
-                <I18nText
-                  text="Overrides Global for {workspace}."
-                  values={{ workspace: workspaceName }}
-                />
-              )
-            ) : (
-              <I18nText text={'Select a workspace to configure this.'} />
-            )}
-          </p>
-        </button>
-      </CardContent>
-    </Card>
-  );
-}
-
-type RouteBuilderProps = {
-  title: string;
-  description: string;
-  draft: DraftRouteSet;
-  channels: DraftChannel[];
-  disabled?: boolean;
-  showWorkspaceInclude?: boolean;
-  channelsHref: string;
-  emptyText: string;
-  onAddRoute: () => void;
-  onChange: (updater: (current: DraftRouteSet) => DraftRouteSet) => void;
-};
-
-function RouteBuilder({
-  title,
-  description,
-  draft,
+function AddRuleDialog({
+  open,
   channels,
-  disabled = false,
-  showWorkspaceInclude = false,
-  channelsHref,
-  emptyText,
-  onAddRoute,
-  onChange,
-}: RouteBuilderProps) {
-  const { ts } = useI18n();
-  const availableChannels = channels.filter((channel) => channel.id);
-  const isWorkspaceInheritMode = showWorkspaceInclude && draft.inheritGlobal;
-  const routeControlsDisabled = disabled || isWorkspaceInheritMode;
-  const canAddRoute =
-    availableChannels.length > 0 &&
-    !isWorkspaceInheritMode &&
-    hasUnusedChannel(availableChannels, draft.routes);
-  const updateRoute = (
-    index: number,
-    updater: (route: DraftRoute) => DraftRoute
-  ) =>
-    onChange((current) => ({
-      ...current,
-      routes: current.routes.map((route, routeIndex) =>
-        routeIndex === index ? updater(route) : route
-      ),
-    }));
-  const deleteRoute = (index: number) =>
-    onChange((current) => ({
-      ...current,
-      routes: current.routes.filter((_, routeIndex) => routeIndex !== index),
-    }));
-
+  routes,
+  onOpenChange,
+  onAdd,
+}: {
+  open: boolean;
+  channels: DraftChannel[];
+  routes: DraftRoute[];
+  onOpenChange: (open: boolean) => void;
+  onAdd: (channelId: string) => void;
+}) {
+  const availableChannels = channels.filter(
+    (channel) =>
+      channel.id && !routes.some((route) => route.channelId === channel.id)
+  );
   return (
-    <Card className="min-w-0">
-      <CardHeader className="grid-cols-[1fr_auto]">
-        <div className="min-w-0 space-y-1">
-          <CardTitle className="truncate text-sm">
-            <I18nText text={'2. Send notifications'} />
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            <I18nText text={title} />. <I18nText text={description} />
-          </p>
-        </div>
-        {!isWorkspaceInheritMode && (
-          <label className="flex items-center gap-2 text-sm">
-            <span className="text-muted-foreground">
-              <I18nText text={'Enabled'} />
-            </span>
-            <Switch
-              checked={draft.enabled}
-              disabled={disabled}
-              onCheckedChange={(enabled) =>
-                onChange((current) => ({ ...current, enabled }))
-              }
-              aria-label={ts('Toggle {title}', { title: ts(title) })}
-            />
-          </label>
-        )}
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {showWorkspaceInclude && (
-          <div className="grid gap-2 sm:grid-cols-2">
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() =>
-                onChange((current) => ({
-                  ...current,
-                  inheritGlobal: true,
-                }))
-              }
-              className={cn(
-                'rounded-md border px-3 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60',
-                draft.inheritGlobal
-                  ? 'border-primary bg-primary/10'
-                  : 'border-border hover:bg-muted'
-              )}
-            >
-              <span className="block text-sm font-medium">
-                <I18nText text={'Inherit Global'} />
-              </span>
-              <span className="mt-1 block text-xs text-muted-foreground">
-                <I18nText text={'Use the Global rules for this workspace.'} />
-              </span>
-            </button>
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() =>
-                onChange((current) => ({
-                  ...current,
-                  inheritGlobal: false,
-                }))
-              }
-              className={cn(
-                'rounded-md border px-3 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60',
-                !draft.inheritGlobal
-                  ? 'border-primary bg-primary/10'
-                  : 'border-border hover:bg-muted'
-              )}
-            >
-              <span className="block text-sm font-medium">
-                <I18nText text={'Configure Workspace'} />
-              </span>
-              <span className="mt-1 block text-xs text-muted-foreground">
-                <I18nText
-                  text={'Override Global with workspace-specific rules.'}
-                />
-              </span>
-            </button>
-          </div>
-        )}
-
-        {isWorkspaceInheritMode ? (
-          <div className="rounded-md border border-border bg-muted/30 px-3 py-4 text-sm text-muted-foreground">
-            <I18nText
-              text={
-                'This workspace currently inherits Global rules. Workspace routes are ignored until Configure Workspace is selected.'
-              }
-            />
-          </div>
-        ) : availableChannels.length === 0 ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border px-3 py-4 text-sm text-muted-foreground">
-            <span>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            <I18nText text={'Add rule'} />
+          </DialogTitle>
+          <DialogDescription>
+            <I18nText text={'Choose a destination for this rule.'} />
+          </DialogDescription>
+        </DialogHeader>
+        <div className="max-h-72 space-y-2 overflow-y-auto">
+          {availableChannels.map((channel) => {
+            const Icon = providerIcon(channel.type);
+            return (
+              <button
+                key={channel.id}
+                type="button"
+                onClick={() => onAdd(channel.id!)}
+                className="flex min-h-14 w-full items-center gap-3 rounded-md border border-border px-4 py-3 text-left hover:border-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Icon className="size-5 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate text-base font-medium">
+                  {channelLabel(channel)}
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  <I18nText
+                    text={
+                      channel.enabled
+                        ? providerLabel(channel.type)
+                        : 'Channel off'
+                    }
+                  />
+                </span>
+                <Plus className="size-4 text-primary" />
+              </button>
+            );
+          })}
+          {availableChannels.length === 0 && (
+            <p className="py-4 text-base text-muted-foreground">
               <I18nText
-                text={'Create a channel before adding notification routes.'}
+                text={
+                  channels.length
+                    ? 'Every channel already has a rule. Edit an existing rule or create another channel.'
+                    : 'Create a channel before adding notification routes.'
+                }
               />
-            </span>
-            <Button asChild variant="ghost" size="sm">
-              <Link to={channelsHref}>
-                <I18nText text={'Manage channels'} />
-              </Link>
-            </Button>
-          </div>
-        ) : draft.routes.length === 0 ? (
-          <div className="rounded-md border border-border px-3 py-4 text-sm text-muted-foreground">
-            {emptyText}
-          </div>
-        ) : (
-          <div className="rounded-md border border-border">
-            <div className="divide-y divide-border">
-              {draft.routes.map((route, index) => (
-                <RouteRuleRow
-                  key={route.id || `${route.channelId}-${index}`}
-                  route={route}
-                  index={index}
-                  routes={draft.routes}
-                  channels={availableChannels}
-                  disabled={routeControlsDisabled}
-                  onUpdate={updateRoute}
-                  onDelete={deleteRoute}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {!isWorkspaceInheritMode &&
-          availableChannels.length > 0 &&
-          (canAddRoute ? (
-            <button
-              type="button"
-              onClick={onAddRoute}
-              disabled={routeControlsDisabled}
-              className="flex h-10 w-full items-center justify-center gap-2 rounded-md border border-dashed border-border text-sm text-primary transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:text-muted-foreground"
-            >
-              <Plus className="h-4 w-4" />
-              <I18nText text={'Add another route'} />
-            </button>
-          ) : (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border px-3 py-3 text-sm text-muted-foreground">
-              <p>
-                <I18nText
-                  text={
-                    'Each channel can have one route per scope. Edit its events above, or add another channel.'
-                  }
-                />
-              </p>
-              <Button asChild variant="outline" size="sm">
-                <Link to={channelsHref}>
-                  <Plus className="h-4 w-4" />
-                  <I18nText text={'Add channel'} />
-                </Link>
-              </Button>
-            </div>
-          ))}
-      </CardContent>
-    </Card>
+            </p>
+          )}
+        </div>
+        <DialogFooter className="border-t border-border">
+          <Button asChild variant="outline">
+            <Link to="/notification-channels">
+              <Plus className="size-4" />
+              <I18nText text={'Add channel'} />
+            </Link>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-type RouteRuleRowProps = {
-  route: DraftRoute;
-  index: number;
-  routes: DraftRoute[];
-  channels: DraftChannel[];
-  disabled: boolean;
-  onUpdate: (index: number, updater: (route: DraftRoute) => DraftRoute) => void;
-  onDelete: (index: number) => void;
-};
+function eventDotClass(event: NotificationEventType): string {
+  switch (event) {
+    case NotificationEventType.dag_run_failed:
+      return 'bg-error';
+    case NotificationEventType.dag_run_aborted:
+    case NotificationEventType.dag_run_rejected:
+      return 'bg-[var(--status-aborted)]';
+    case NotificationEventType.dag_run_succeeded:
+      return 'bg-success';
+    default:
+      return 'bg-warning';
+  }
+}
 
-function RouteRuleRow({
+function RouteRuleCard({
   route,
   index,
   routes,
   channels,
   disabled,
+  inherited,
+  remoteNode,
   onUpdate,
   onDelete,
-}: RouteRuleRowProps) {
+}: {
+  route: DraftRoute;
+  index: number;
+  routes: DraftRoute[];
+  channels: DraftChannel[];
+  disabled: boolean;
+  inherited: boolean;
+  remoteNode: string;
+  onUpdate: (index: number, updater: (route: DraftRoute) => DraftRoute) => void;
+  onDelete: (index: number) => void;
+}) {
+  const { ts } = useI18n();
+  const client = useClient();
+  const fieldId = useId();
   const channel = channels.find((item) => item.id === route.channelId);
   const Icon = providerIcon(channel?.type);
-  const effectiveEvents = route.events;
-  const usesOperationalEvents = sameEvents(
-    effectiveEvents,
-    DEFAULT_ROUTE_EVENTS
-  );
-  const usedChannelIds = new Set(
-    routes
-      .filter((_, routeIndex) => routeIndex !== index)
-      .map((item) => item.channelId)
-  );
+  const label = channelLabel(channel, route.channelId);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{
+    delivered: boolean;
+    message: string;
+  } | null>(null);
+  const readOnly = disabled || inherited;
+
+  useEffect(() => {
+    setTestResult(null);
+  }, [route.channelId, remoteNode]);
+
+  const testChannel = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const { data, error } = await client.POST(
+        '/notification-channels/{channelId}/test',
+        {
+          params: {
+            path: { channelId: route.channelId },
+            query: { remoteNode },
+          },
+        }
+      );
+      if (error) {
+        throw new Error(
+          error.message || ts('Failed to send test notification')
+        );
+      }
+      const result = data?.results[0];
+      setTestResult({
+        delivered: !!result?.delivered,
+        message: result?.delivered
+          ? ts('Test delivered')
+          : result?.error || ts('Delivery failed'),
+      });
+    } catch (error) {
+      setTestResult({
+        delivered: false,
+        message:
+          error instanceof Error
+            ? error.message
+            : ts('Failed to send test notification'),
+      });
+    } finally {
+      setTesting(false);
+    }
+  };
 
   return (
-    <div className="grid gap-3 px-3 py-3 2xl:grid-cols-[minmax(280px,1fr)_minmax(220px,280px)_auto] 2xl:items-center">
-      <div className="min-w-0 space-y-2">
-        <div className="text-xs font-medium text-muted-foreground">
-          <I18nText text={'When any selected event happens'} />
+    <section
+      aria-label={ts('Rule for {channel}', { channel: label })}
+      className="min-w-0 rounded-lg border border-border bg-card px-5 py-5 sm:px-6"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-5">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+          <label
+            htmlFor={`${fieldId}-channel`}
+            className="shrink-0 text-base text-muted-foreground"
+          >
+            <I18nText text={'Send to'} />
+          </label>
+          <Select
+            value={route.channelId}
+            disabled={readOnly || testing}
+            onValueChange={(channelId) =>
+              onUpdate(index, (current) => ({ ...current, channelId }))
+            }
+          >
+            <SelectTrigger
+              id={`${fieldId}-channel`}
+              className="h-11 w-full min-w-0 sm:w-64 text-base"
+            >
+              <span className="flex min-w-0 items-center gap-3">
+                <Icon className="size-5 shrink-0 text-primary" />
+                <SelectValue placeholder={ts('Select channel')} />
+              </span>
+            </SelectTrigger>
+            <SelectContent>
+              {!channel && (
+                <SelectItem value={route.channelId}>
+                  {ts('Missing channel')}
+                </SelectItem>
+              )}
+              {channels
+                .filter((item) => item.id)
+                .map((item) => (
+                  <SelectItem
+                    key={item.id}
+                    value={item.id!}
+                    disabled={routes.some(
+                      (other, otherIndex) =>
+                        otherIndex !== index && other.channelId === item.id
+                    )}
+                  >
+                    {channelLabel(item)}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+          {channel && (
+            <span className="hidden border-l border-border pl-4 text-base text-muted-foreground sm:block">
+              <I18nText text={providerLabel(channel.type)} />
+            </span>
+          )}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex items-center gap-4">
+          <label className="flex min-h-11 cursor-pointer items-center gap-3 text-base text-muted-foreground">
+            <I18nText text={'Enabled'} />
+            <Switch
+              checked={route.enabled}
+              disabled={readOnly}
+              onCheckedChange={(enabled) =>
+                onUpdate(index, (current) => ({ ...current, enabled }))
+              }
+              aria-label={ts('Toggle {title}', { title: label })}
+              className="focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+            />
+          </label>
+          {!inherited && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-11"
+                  disabled={disabled}
+                  aria-label={ts('Rule actions for {channel}', {
+                    channel: label,
+                  })}
+                >
+                  <MoreHorizontal className="size-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  className="gap-2 text-destructive"
+                  onSelect={() => onDelete(index)}
+                >
+                  <Trash2 className="size-4" />
+                  <I18nText text={'Delete rule'} />
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+      </div>
+      <fieldset
+        className="min-w-0 pt-5"
+        disabled={readOnly}
+        aria-describedby={`${fieldId}-events-help`}
+      >
+        <legend className="float-left mb-1 w-full text-lg font-semibold">
+          <I18nText text={'Notify on'} />
+        </legend>
+        <p
+          id={`${fieldId}-events-help`}
+          className="clear-both mb-4 text-base text-muted-foreground"
+        >
+          <I18nText
+            text={'Send a notification when any selected event occurs.'}
+          />
+        </p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {EVENT_OPTIONS.map((event) => {
-            const checked = effectiveEvents.includes(event.value);
+            const checked = route.events.includes(event.value);
             return (
               <label
                 key={event.value}
                 className={cn(
-                  'flex h-8 cursor-pointer items-center gap-2 rounded-md border px-3 text-xs',
-                  eventChipClass(event.value, checked)
+                  'flex min-h-14 items-center gap-3 rounded-md border px-4 py-3 text-base transition-colors focus-within:ring-2 focus-within:ring-ring',
+                  readOnly
+                    ? 'cursor-default'
+                    : 'cursor-pointer hover:border-primary/60',
+                  checked
+                    ? 'border-primary/60 bg-primary/10 text-foreground'
+                    : 'border-border-strong text-foreground'
                 )}
               >
                 <Checkbox
                   checked={checked}
-                  disabled={disabled}
-                  onCheckedChange={(value) =>
-                    onUpdate(index, (current) => {
-                      const currentEvents = current.events;
-                      const nextEvents = value
-                        ? [...currentEvents, event.value]
-                        : currentEvents.filter((item) => item !== event.value);
-                      return {
-                        ...current,
-                        events: nextEvents,
-                      };
-                    })
+                  disabled={readOnly}
+                  className="size-5 border-muted-foreground/70 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground data-[state=checked]:border-primary"
+                  onCheckedChange={(checked) =>
+                    onUpdate(index, (current) => ({
+                      ...current,
+                      events: checked
+                        ? [...current.events, event.value]
+                        : current.events.filter(
+                            (value) => value !== event.value
+                          ),
+                    }))
                   }
                 />
-                {event.label}
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'size-2.5 shrink-0 rounded-full',
+                    eventDotClass(event.value)
+                  )}
+                />
+                <I18nText text={event.label} />
               </label>
             );
           })}
-          {!usesOperationalEvents && (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={disabled}
-              onClick={() =>
-                onUpdate(index, (current) => ({
-                  ...current,
-                  events: [...DEFAULT_ROUTE_EVENTS],
-                }))
-              }
-            >
-              <I18nText text={'Use operational events'} />
-            </Button>
-          )}
         </div>
-        {effectiveEvents.length === 0 && (
-          <p role="alert" className="text-xs text-destructive">
+        {route.events.length === 0 && (
+          <p role="alert" className="mt-3 text-base text-destructive">
             <I18nText text={'Select at least one event before saving.'} />
           </p>
         )}
-      </div>
-
-      <div className="min-w-0 space-y-2">
-        <div className="text-xs font-medium text-muted-foreground">
-          <I18nText text={'Send to'} />
-        </div>
-        <Select
-          value={route.channelId}
-          disabled={disabled}
-          onValueChange={(channelId) =>
-            onUpdate(index, (current) => ({
-              ...current,
-              channelId,
-            }))
-          }
-        >
-          <SelectTrigger>
-            <I18nProps>
-              <SelectValue placeholder="Select channel" />
-            </I18nProps>
-          </SelectTrigger>
-          <SelectContent>
-            {channels.map((item) => (
-              <SelectItem
-                key={item.id}
-                value={item.id || ''}
-                disabled={!!item.id && usedChannelIds.has(item.id)}
-              >
-                {item.name || providerLabel(item.type)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="flex items-center gap-2 2xl:justify-end">
-        <div className="hidden min-w-0 items-center gap-2 text-sm text-muted-foreground 2xl:flex">
-          <Icon className="h-4 w-4 shrink-0" />
-          <span className="max-w-40 truncate">
-            {channelLabel(channel, route.channelId)}
-          </span>
-        </div>
-        <Badge
-          variant={route.enabled && channel?.enabled ? 'success' : 'default'}
-        >
-          {routeStateLabel(route, channel)}
-        </Badge>
-        <Switch
-          checked={route.enabled}
-          disabled={disabled}
-          onCheckedChange={(enabled) =>
-            onUpdate(index, (current) => ({
-              ...current,
-              enabled,
-            }))
-          }
-          aria-label={`Toggle ${channelLabel(channel, route.channelId)}`}
-        />
+      </fieldset>
+      {(!channel || !channel.enabled) && (
+        <p className="mt-4 flex items-center gap-2 text-base text-warning">
+          <AlertTriangle className="size-4 shrink-0" />
+          <I18nText
+            text={
+              !channel
+                ? 'This channel is missing. Choose another destination.'
+                : 'This channel is off. Enable it in Channels to receive notifications.'
+            }
+          />
+        </p>
+      )}
+      <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-border pt-4">
         <Button
-          variant="ghost"
-          size="sm"
-          disabled={disabled}
-          onClick={() => onDelete(index)}
-          aria-label={`Delete ${channelLabel(channel, route.channelId)}`}
+          variant="outline"
+          className="h-10 text-base"
+          onClick={testChannel}
+          disabled={disabled || testing || !channel}
         >
-          <Trash2 className="h-4 w-4 text-destructive" />
+          {testing ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Send className="size-4" />
+          )}
+          <I18nText text={testing ? 'Sending...' : 'Test channel'} />
         </Button>
-      </div>
-    </div>
-  );
-}
-
-type RoutePreviewPanelProps = {
-  scopeLabel: string;
-  draft: DraftRouteSet;
-  channels: DraftChannel[];
-};
-
-function RoutePreviewPanel({
-  scopeLabel,
-  draft,
-  channels,
-}: RoutePreviewPanelProps) {
-  const { ts } = useI18n();
-  const previews = draft.routes
-    .filter((route) => route.enabled)
-    .flatMap((route) => {
-      const channel = channels.find((item) => item.id === route.channelId);
-      if (!channel?.enabled) {
-        return [];
-      }
-      return route.events.map((event) => ({
-        id: `${route.id || route.channelId}-${event}`,
-        event,
-        channel,
-      }));
-    })
-    .slice(0, 6);
-
-  return (
-    <Card className="self-start">
-      <CardHeader>
-        <CardTitle className="text-sm">
-          <I18nText text={'3. Effective rules'} />
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {!draft.enabled ? (
-          <p className="text-sm text-muted-foreground">
-            <I18nText text={'Routes are disabled for this scope.'} />
-          </p>
-        ) : previews.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            <I18nText
-              text={'No enabled route currently sends notifications.'}
-            />
+        {testResult ? (
+          <p
+            role={testResult.delivered ? 'status' : 'alert'}
+            className={cn(
+              'text-base',
+              testResult.delivered ? 'text-success' : 'text-destructive'
+            )}
+          >
+            {testResult.message}
           </p>
         ) : (
-          <div className="divide-y divide-border rounded-md border border-border">
-            {previews.map((item) => {
-              const Icon = providerIcon(item.channel.type);
-              return (
-                <div key={item.id} className="space-y-1 px-3 py-2 text-sm">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={cn(
-                        'rounded-md border px-2 py-0.5 text-xs',
-                        eventChipClass(item.event, true)
-                      )}
-                    >
-                      {eventLabel(item.event)}
-                    </span>
-                    <span className="text-muted-foreground">
-                      {ts('from {scope}', {
-                        scope:
-                          scopeLabel === 'Global' ? ts('Global') : scopeLabel,
-                      })}
-                    </span>
-                  </div>
-                  <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
-                    <RouteIcon className="h-3.5 w-3.5 shrink-0" />
-                    <I18nTemplate
-                      text={'send to {channel}'}
-                      values={{
-                        channel: (
-                          <span className="inline-flex min-w-0 items-center gap-2">
-                            <Icon className="h-3.5 w-3.5 shrink-0" />
-                            <span className="truncate text-foreground">
-                              {channelLabel(item.channel)}
-                            </span>
-                          </span>
-                        ),
-                      }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-        <div className="flex items-start gap-2 border-t border-border pt-3 text-xs text-muted-foreground">
-          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>
+          <p className="text-sm text-muted-foreground">
             <I18nText
-              text={
-                'Dagu uses the most specific configured scope: DAG, then workspace, then Global.'
-              }
+              text={'Sends a sample notification to this destination.'}
             />
-          </span>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function ChannelHelpPanel() {
-  return (
-    <Card>
-      <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-start gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <Info className="h-4 w-4" />
-          </div>
-          <div className="space-y-1">
-            <div className="text-sm font-medium">
-              <I18nText
-                text={
-                  'Need a new Slack, email, webhook, or Telegram destination?'
-                }
-              />
-            </div>
-            <div className="text-sm text-muted-foreground">
-              <I18nText
-                text={
-                  'Create and test notification channels before using them in routes.'
-                }
-              />
-            </div>
-          </div>
-        </div>
-        <Button asChild variant="outline" size="sm">
-          <Link to="/notification-channels">
-            <Mail className="h-4 w-4" />
-            <I18nText text={'Manage channels'} />
-          </Link>
-        </Button>
-      </CardContent>
-    </Card>
+          </p>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -1161,13 +940,13 @@ function StatusCard({ error, notice }: StatusCardProps) {
       {error && (
         <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{error}</span>
+          <I18nText text={error} />
         </div>
       )}
       {notice && (
         <div className="flex items-start gap-2 rounded-md border border-success/30 bg-success/10 p-3 text-sm text-success">
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{notice}</span>
+          <I18nText text={notice} />
         </div>
       )}
     </div>
@@ -1225,6 +1004,7 @@ export function NotificationRulesPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [activeScope, setActiveScope] = useState<RouteScopeKey>('global');
+  const [addRuleOpen, setAddRuleOpen] = useState(false);
 
   const {
     data: channelsData,
@@ -1395,120 +1175,308 @@ export function NotificationRulesPage() {
     }
   };
 
-  const activeDraft =
-    activeScope === 'workspace' && canConfigureWorkspaceRoutes
-      ? workspaceRoutes
-      : globalRoutes;
-  const activeTitle =
-    activeScope === 'workspace' && canConfigureWorkspaceRoutes
-      ? ts('{workspace} workspace', { workspace: selectedWorkspaceName })
-      : 'Global';
-  const activeDescription =
-    activeScope === 'workspace' && canConfigureWorkspaceRoutes
-      ? workspaceRoutes.inheritGlobal
-        ? 'This workspace currently inherits Global rules.'
-        : 'Overrides Global for DAGs in this workspace.'
-      : 'Default for every DAG unless workspace or DAG settings are configured.';
-  const activeSaving =
-    activeScope === 'workspace' && canConfigureWorkspaceRoutes
-      ? isSavingWorkspaceRoutes
-      : isSavingGlobalRoutes;
-  const activeEmptyText =
-    activeScope === 'workspace' && canConfigureWorkspaceRoutes
-      ? 'This workspace override has no routes, so DAGs here will not notify unless a DAG is configured.'
-      : 'Global has no routes. DAGs will not notify unless a workspace or DAG is configured.';
-  const activeChannels = channels.filter((channel) => channel.id);
-  const activeWorkspaceInheritsGlobal =
-    activeScope === 'workspace' &&
-    canConfigureWorkspaceRoutes &&
-    workspaceRoutes.inheritGlobal;
-  const previewDraft = activeWorkspaceInheritsGlobal
-    ? globalRoutes
-    : activeDraft;
-  const previewScopeLabel = activeWorkspaceInheritsGlobal
-    ? 'Global'
-    : activeTitle;
-  const canAddActiveRoute =
-    activeChannels.length > 0 &&
-    !activeWorkspaceInheritsGlobal &&
-    hasUnusedChannel(activeChannels, activeDraft.routes);
+  const isWorkspaceScope =
+    activeScope === 'workspace' && canConfigureWorkspaceRoutes;
+  const activeDraft = isWorkspaceScope ? workspaceRoutes : globalRoutes;
+  const savedDraft = routeSetDraftFromAPI(
+    isWorkspaceScope ? workspaceRoutesData : globalRoutesData
+  );
+  const hasUnsavedChanges = !sameRouteSet(activeDraft, savedDraft);
+  const activeSaving = isSavingGlobalRoutes || isSavingWorkspaceRoutes;
+  const inherited = isWorkspaceScope && workspaceRoutes.inheritGlobal;
+  const displayedDraft = inherited ? globalRoutes : activeDraft;
+  const canSave =
+    hasUnsavedChanges &&
+    !isLoading &&
+    !activeSaving &&
+    (inherited || activeDraft.routes.every((route) => route.events.length > 0));
   const updateActiveRoutes = (
     updater: (current: DraftRouteSet) => DraftRouteSet
   ) => {
-    if (activeScope === 'workspace' && canConfigureWorkspaceRoutes) {
-      setWorkspaceRoutes((current) => updater(current));
-      return;
+    setError(null);
+    setNotice(null);
+    if (isWorkspaceScope) {
+      setWorkspaceRoutes(updater);
+    } else {
+      setGlobalRoutes(updater);
     }
-    setGlobalRoutes((current) => updater(current));
   };
-  const addActiveRoute = () => {
-    updateActiveRoutes((current) => {
-      const usedChannelIds = new Set(
-        current.routes.map((route) => route.channelId)
-      );
-      return {
-        ...current,
-        routes: [...current.routes, blankRoute(activeChannels, usedChannelIds)],
-      };
-    });
+  const updateRoute = (
+    index: number,
+    updater: (route: DraftRoute) => DraftRoute
+  ) =>
+    updateActiveRoutes((current) => ({
+      ...current,
+      routes: current.routes.map((route, routeIndex) =>
+        routeIndex === index ? updater(route) : route
+      ),
+    }));
+  const deleteRoute = (index: number) =>
+    updateActiveRoutes((current) => ({
+      ...current,
+      routes: current.routes.filter((_, routeIndex) => routeIndex !== index),
+    }));
+  const addRoute = (channelId: string) => {
+    updateActiveRoutes((current) => ({
+      ...current,
+      routes: [
+        ...current.routes,
+        { channelId, enabled: true, events: [...DEFAULT_ROUTE_EVENTS] },
+      ],
+    }));
+    setAddRuleOpen(false);
   };
-  const saveActiveRoutes =
-    activeScope === 'workspace' && canConfigureWorkspaceRoutes
-      ? saveWorkspaceRoutes
-      : saveGlobalRoutes;
+  const configureWorkspace = () => {
+    updateActiveRoutes((current) => ({
+      ...current,
+      inheritGlobal: false,
+      routes: current.routes.length
+        ? current.routes
+        : globalRoutes.routes.map(({ channelId, enabled, events }) => ({
+            channelId,
+            enabled,
+            events: [...events],
+          })),
+    }));
+  };
+  const cancelChanges = () => updateActiveRoutes(() => savedDraft);
+  const saveActiveRoutes = isWorkspaceScope
+    ? saveWorkspaceRoutes
+    : saveGlobalRoutes;
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto w-full max-w-[1120px] space-y-7 pb-3 pt-2 text-base">
+      <NotificationHeader />
       <StatusCard error={error ?? loadError} notice={notice} />
-      {isLoading && (
+      {isLoading ? (
         <I18nProps>
           <LoadingCard label="Refreshing notification rules..." />
         </I18nProps>
+      ) : (
+        <>
+          <ScopeSelector
+            activeScope={activeScope}
+            workspaceName={selectedWorkspaceName}
+            disabled={activeSaving}
+            onChange={(scope) => {
+              setActiveScope(scope);
+              setError(null);
+              setNotice(null);
+            }}
+          />
+
+          {isWorkspaceScope && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-muted/30 p-4">
+              <div className="space-y-1">
+                <p className="font-medium">
+                  <I18nText
+                    text={
+                      inherited
+                        ? 'Inheriting Global rules'
+                        : 'Workspace override'
+                    }
+                  />
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  <I18nText
+                    text={
+                      inherited
+                        ? 'Configure workspace rules to choose different events or destinations.'
+                        : 'These rules replace Global defaults for this workspace.'
+                    }
+                  />
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                className="h-10 text-base"
+                disabled={activeSaving}
+                onClick={
+                  inherited
+                    ? configureWorkspace
+                    : () =>
+                        updateActiveRoutes((current) => ({
+                          ...current,
+                          inheritGlobal: true,
+                        }))
+                }
+              >
+                <I18nText
+                  text={inherited ? 'Configure workspace' : 'Use Global rules'}
+                />
+              </Button>
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <h2 className="text-xl font-semibold">
+                  <I18nText text={'Notification rules'} />
+                </h2>
+                <span className="text-base text-muted-foreground">
+                  {ts(
+                    displayedDraft.routes.length === 1
+                      ? '{count} rule'
+                      : '{count} rules',
+                    { count: displayedDraft.routes.length }
+                  )}
+                </span>
+              </div>
+              {!inherited && (
+                <div className="flex items-center gap-2">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-11"
+                        disabled={activeSaving}
+                        aria-label={ts('Rule settings')}
+                      >
+                        <MoreHorizontal className="size-5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onSelect={() =>
+                          updateActiveRoutes((current) => ({
+                            ...current,
+                            enabled: !current.enabled,
+                          }))
+                        }
+                      >
+                        <I18nText
+                          text={
+                            activeDraft.enabled
+                              ? 'Turn off all rules'
+                              : 'Turn on all rules'
+                          }
+                        />
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <Button
+                    variant="primary"
+                    className="h-11 px-4 text-base"
+                    onClick={() => setAddRuleOpen(true)}
+                    disabled={activeSaving}
+                  >
+                    <Plus className="size-4" />
+                    <I18nText text={'Add rule'} />
+                  </Button>
+                </div>
+              )}
+            </div>
+            {!displayedDraft.enabled && (
+              <p className="flex items-center gap-2 rounded-md border border-warning/30 bg-warning/10 p-4 text-base text-warning">
+                <Info className="size-4 shrink-0" />
+                <I18nText
+                  text={
+                    'All rules are off for this scope. Notifications will not be sent.'
+                  }
+                />
+              </p>
+            )}
+            {displayedDraft.routes.length ? (
+              displayedDraft.routes.map((route, index) => (
+                <RouteRuleCard
+                  key={route.id || `${route.channelId}-${index}`}
+                  route={route}
+                  index={index}
+                  routes={displayedDraft.routes}
+                  channels={channels}
+                  disabled={activeSaving}
+                  inherited={inherited}
+                  remoteNode={remoteNode}
+                  onUpdate={updateRoute}
+                  onDelete={deleteRoute}
+                />
+              ))
+            ) : (
+              <div className="rounded-lg border border-dashed border-border-strong px-6 py-10 text-center">
+                <Bell className="mx-auto mb-3 size-7 text-muted-foreground" />
+                <p className="font-medium">
+                  <I18nText text={'No notification rules yet'} />
+                </p>
+                <p className="mt-2 text-base text-muted-foreground">
+                  <I18nText
+                    text={
+                      inherited
+                        ? 'Global has no routes. DAGs will not notify unless a workspace or DAG is configured.'
+                        : isWorkspaceScope
+                          ? 'This workspace override has no routes, so DAGs here will not notify unless a DAG is configured.'
+                          : 'Add a rule to choose a destination and the events to send.'
+                    }
+                  />
+                </p>
+              </div>
+            )}
+            <p className="flex items-start gap-2 text-sm text-muted-foreground">
+              <Info className="mt-0.5 size-4 shrink-0" />
+              <I18nText
+                text={
+                  'One rule per channel. Select multiple events for each destination.'
+                }
+              />
+            </p>
+          </div>
+
+          <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border-strong bg-card px-5 py-4 shadow-sm">
+            <div className="flex items-start gap-3" role="status">
+              <span
+                aria-hidden="true"
+                className={cn(
+                  'mt-1.5 size-2.5 shrink-0 rounded-full',
+                  hasUnsavedChanges ? 'bg-warning' : 'bg-success'
+                )}
+              />
+              <div>
+                <p className="font-medium">
+                  <I18nText
+                    text={
+                      activeSaving
+                        ? 'Saving...'
+                        : hasUnsavedChanges
+                          ? 'Unsaved changes'
+                          : 'All changes saved'
+                    }
+                  />
+                </p>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  <I18nText text={'Rules take effect after saving.'} />
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                className="h-11 px-5 text-base"
+                onClick={cancelChanges}
+                disabled={!hasUnsavedChanges || activeSaving}
+              >
+                <I18nText text={'Cancel'} />
+              </Button>
+              <Button
+                variant="primary"
+                className="h-11 px-5 text-base"
+                onClick={saveActiveRoutes}
+                disabled={!canSave}
+              >
+                {activeSaving && <Loader2 className="size-4 animate-spin" />}
+                <I18nText text={'Save changes'} />
+              </Button>
+            </div>
+          </div>
+        </>
       )}
-
-      <NotificationRulesHeader
-        canAddRoute={canAddActiveRoute}
-        canSave={
-          activeWorkspaceInheritsGlobal ||
-          activeDraft.routes.every((route) => route.events.length > 0)
-        }
-        saving={activeSaving}
-        onAddRoute={addActiveRoute}
-        onSave={saveActiveRoutes}
+      <AddRuleDialog
+        open={addRuleOpen}
+        onOpenChange={setAddRuleOpen}
+        channels={channels}
+        routes={activeDraft.routes}
+        onAdd={addRoute}
       />
-
-      <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
-        <ScopeSelector
-          activeScope={activeScope}
-          workspaceName={selectedWorkspaceName}
-          canConfigureWorkspaceRoutes={canConfigureWorkspaceRoutes}
-          globalRoutes={globalRoutes}
-          workspaceRoutes={workspaceRoutes}
-          onChange={setActiveScope}
-        />
-
-        <RouteBuilder
-          title={activeTitle}
-          description={activeDescription}
-          draft={activeDraft}
-          channels={channels}
-          channelsHref="/notification-channels"
-          showWorkspaceInclude={
-            activeScope === 'workspace' && canConfigureWorkspaceRoutes
-          }
-          emptyText={activeEmptyText}
-          onAddRoute={addActiveRoute}
-          onChange={updateActiveRoutes}
-        />
-
-        <RoutePreviewPanel
-          scopeLabel={previewScopeLabel}
-          draft={previewDraft}
-          channels={channels}
-        />
-      </div>
-
-      <ChannelHelpPanel />
     </div>
   );
 }
@@ -1716,7 +1684,8 @@ export function NotificationChannelsPage() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto w-full max-w-[1120px] space-y-7 pb-3 pt-2">
+      <NotificationHeader activeTab="channels" />
       <StatusCard error={error ?? loadError} notice={notice} />
       {isLoading && (
         <I18nProps>

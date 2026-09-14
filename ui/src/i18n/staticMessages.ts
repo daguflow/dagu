@@ -4,6 +4,61 @@
 import type { Locale } from '@/contexts/UserPreference';
 
 const english = {
+  'Choose where workflow updates go and when they are sent.':
+    'Choose where workflow updates go and when they are sent.',
+  'Applies to': 'Applies to',
+  'Global defaults': 'Global defaults',
+  'Used unless a workspace or workflow has its own rules.':
+    'Used unless a workspace or workflow has its own rules.',
+  'Workspace rules apply unless a workflow has its own rules.':
+    'Workspace rules apply unless a workflow has its own rules.',
+  'Add rule': 'Add rule',
+  'Choose a destination for this rule.': 'Choose a destination for this rule.',
+  'Every channel already has a rule. Edit an existing rule or create another channel.':
+    'Every channel already has a rule. Edit an existing rule or create another channel.',
+  'Rule for {channel}': 'Rule for {channel}',
+  'Rule actions for {channel}': 'Rule actions for {channel}',
+  'Delete rule': 'Delete rule',
+  'Notify on': 'Notify on',
+  'Send a notification when any selected event occurs.':
+    'Send a notification when any selected event occurs.',
+  'This channel is missing. Choose another destination.':
+    'This channel is missing. Choose another destination.',
+  'This channel is off. Enable it in Channels to receive notifications.':
+    'This channel is off. Enable it in Channels to receive notifications.',
+  'Test channel': 'Test channel',
+  'Sending...': 'Sending...',
+  'Sends a sample notification to this destination.':
+    'Sends a sample notification to this destination.',
+  'Test delivered': 'Test delivered',
+  'Delivery failed': 'Delivery failed',
+  'Failed to send test notification': 'Failed to send test notification',
+  'Inheriting Global rules': 'Inheriting Global rules',
+  'Workspace override': 'Workspace override',
+  'Configure workspace rules to choose different events or destinations.':
+    'Configure workspace rules to choose different events or destinations.',
+  'These rules replace Global defaults for this workspace.':
+    'These rules replace Global defaults for this workspace.',
+  'Configure workspace': 'Configure workspace',
+  'Use Global rules': 'Use Global rules',
+  'Notification rules': 'Notification rules',
+  '{count} rule': '{count} rule',
+  '{count} rules': '{count} rules',
+  'Rule settings': 'Rule settings',
+  'Turn off all rules': 'Turn off all rules',
+  'Turn on all rules': 'Turn on all rules',
+  'All rules are off for this scope. Notifications will not be sent.':
+    'All rules are off for this scope. Notifications will not be sent.',
+  'No notification rules yet': 'No notification rules yet',
+  'Add a rule to choose a destination and the events to send.':
+    'Add a rule to choose a destination and the events to send.',
+  'One rule per channel. Select multiple events for each destination.':
+    'One rule per channel. Select multiple events for each destination.',
+  'All changes saved': 'All changes saved',
+  'Rules take effect after saving.': 'Rules take effect after saving.',
+  'Global rules saved': 'Global rules saved',
+  'Workspace rules saved': 'Workspace rules saved',
+  'Workspace now inherits Global rules': 'Workspace now inherits Global rules',
   'Failed to resume the scheduler': 'Failed to resume the scheduler',
   'Failed to update the scheduler pause state': 'Failed to update the scheduler pause state',
   'Log options': 'Log options',
@@ -2132,6 +2187,61 @@ export type StaticMessage = keyof typeof english;
 export type StaticTranslationValues = Record<string, string | number>;
 
 const chinese = {
+  'Choose where workflow updates go and when they are sent.':
+    '选择工作流通知的发送目标和触发时机。',
+  'Applies to': '适用范围',
+  'Global defaults': '全局默认规则',
+  'Used unless a workspace or workflow has its own rules.':
+    '工作区或工作流未配置独立规则时使用。',
+  'Workspace rules apply unless a workflow has its own rules.':
+    '工作流未配置独立规则时使用工作区规则。',
+  'Add rule': '添加规则',
+  'Choose a destination for this rule.': '为此规则选择通知目标。',
+  'Every channel already has a rule. Edit an existing rule or create another channel.':
+    '所有通道都已有规则。请编辑现有规则或创建其他通道。',
+  'Rule for {channel}': '{channel} 的规则',
+  'Rule actions for {channel}': '{channel} 的规则操作',
+  'Delete rule': '删除规则',
+  'Notify on': '通知事件',
+  'Send a notification when any selected event occurs.':
+    '发生任一所选事件时发送通知。',
+  'This channel is missing. Choose another destination.':
+    '此通道不存在。请选择其他通知目标。',
+  'This channel is off. Enable it in Channels to receive notifications.':
+    '此通道已关闭。请在“通道”中启用以接收通知。',
+  'Test channel': '测试通道',
+  'Sending...': '正在发送...',
+  'Sends a sample notification to this destination.':
+    '向此目标发送一条测试通知。',
+  'Test delivered': '测试通知已送达',
+  'Delivery failed': '发送失败',
+  'Failed to send test notification': '测试通知发送失败',
+  'Inheriting Global rules': '继承全局规则',
+  'Workspace override': '工作区覆盖规则',
+  'Configure workspace rules to choose different events or destinations.':
+    '配置工作区规则以选择不同的事件或通知目标。',
+  'These rules replace Global defaults for this workspace.':
+    '这些规则将替代此工作区的全局默认规则。',
+  'Configure workspace': '配置工作区',
+  'Use Global rules': '使用全局规则',
+  'Notification rules': '通知规则',
+  '{count} rule': '{count} 条规则',
+  '{count} rules': '{count} 条规则',
+  'Rule settings': '规则设置',
+  'Turn off all rules': '关闭所有规则',
+  'Turn on all rules': '启用所有规则',
+  'All rules are off for this scope. Notifications will not be sent.':
+    '此范围内的所有规则均已关闭，不会发送通知。',
+  'No notification rules yet': '尚无通知规则',
+  'Add a rule to choose a destination and the events to send.':
+    '添加规则以选择通知目标和要发送的事件。',
+  'One rule per channel. Select multiple events for each destination.':
+    '每个通道一条规则，可为每个目标选择多个事件。',
+  'All changes saved': '所有更改已保存',
+  'Rules take effect after saving.': '规则将在保存后生效。',
+  'Global rules saved': '全局规则已保存',
+  'Workspace rules saved': '工作区规则已保存',
+  'Workspace now inherits Global rules': '工作区现已继承全局规则',
   'Failed to resume the scheduler': '恢复调度器失败',
   'Failed to update the scheduler pause state': '更新调度器暂停状态失败',
   'Log options': '日志选项',
@@ -4200,6 +4310,63 @@ const chinese = {
 } as const satisfies Record<StaticMessage, string>;
 
 const japanese = {
+  'Choose where workflow updates go and when they are sent.':
+    'ワークフローの通知先と通知するタイミングを設定します。',
+  'Applies to': '適用範囲',
+  'Global defaults': 'グローバルのデフォルト',
+  'Used unless a workspace or workflow has its own rules.':
+    'ワークスペースやワークフローに個別のルールがない場合に適用されます。',
+  'Workspace rules apply unless a workflow has its own rules.':
+    'ワークフローに個別のルールがない場合にワークスペースのルールを適用します。',
+  'Add rule': 'ルールを追加',
+  'Choose a destination for this rule.':
+    'このルールの通知先を選択してください。',
+  'Every channel already has a rule. Edit an existing rule or create another channel.':
+    'すべてのチャネルにルールが設定されています。既存のルールを編集するか、別のチャネルを作成してください。',
+  'Rule for {channel}': '{channel} のルール',
+  'Rule actions for {channel}': '{channel} のルール操作',
+  'Delete rule': 'ルールを削除',
+  'Notify on': '通知するイベント',
+  'Send a notification when any selected event occurs.':
+    '選択したいずれかのイベントが発生したときに通知します。',
+  'This channel is missing. Choose another destination.':
+    'このチャネルは見つかりません。別の通知先を選択してください。',
+  'This channel is off. Enable it in Channels to receive notifications.':
+    'このチャネルは無効です。通知を受け取るには「チャネル」で有効にしてください。',
+  'Test channel': 'チャネルをテスト',
+  'Sending...': '送信中...',
+  'Sends a sample notification to this destination.':
+    'この通知先にテスト通知を送信します。',
+  'Test delivered': 'テスト通知を送信しました',
+  'Delivery failed': '送信に失敗しました',
+  'Failed to send test notification': 'テスト通知の送信に失敗しました',
+  'Inheriting Global rules': 'グローバルのルールを継承中',
+  'Workspace override': 'ワークスペースの個別設定',
+  'Configure workspace rules to choose different events or destinations.':
+    '異なるイベントや通知先を使用するには、ワークスペースのルールを設定してください。',
+  'These rules replace Global defaults for this workspace.':
+    'このワークスペースでは、グローバルのデフォルトの代わりにこれらのルールを適用します。',
+  'Configure workspace': 'ワークスペースを設定',
+  'Use Global rules': 'グローバルのルールを使用',
+  'Notification rules': '通知ルール',
+  '{count} rule': '{count} 件のルール',
+  '{count} rules': '{count} 件のルール',
+  'Rule settings': 'ルールの設定',
+  'Turn off all rules': 'すべてのルールを無効にする',
+  'Turn on all rules': 'すべてのルールを有効にする',
+  'All rules are off for this scope. Notifications will not be sent.':
+    'この範囲ではすべてのルールが無効です。通知は送信されません。',
+  'No notification rules yet': '通知ルールはまだありません',
+  'Add a rule to choose a destination and the events to send.':
+    'ルールを追加して、通知先と通知するイベントを選択してください。',
+  'One rule per channel. Select multiple events for each destination.':
+    'チャネルごとに1つのルールを設定できます。通知先ごとに複数のイベントを選択できます。',
+  'All changes saved': 'すべての変更を保存済み',
+  'Rules take effect after saving.': 'ルールは保存後に適用されます。',
+  'Global rules saved': 'グローバルのルールを保存しました',
+  'Workspace rules saved': 'ワークスペースのルールを保存しました',
+  'Workspace now inherits Global rules':
+    'ワークスペースにグローバルのルールを適用しました',
   'Failed to resume the scheduler': 'スケジューラの再開に失敗しました',
   'Failed to update the scheduler pause state': 'スケジューラの一時停止状態の更新に失敗しました',
   'Log options': 'ログ表示設定',

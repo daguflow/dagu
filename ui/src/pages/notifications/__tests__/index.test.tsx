@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Yota Hamada
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -92,7 +92,8 @@ function renderRulesPage(
   events = [
     NotificationEventType.dag_run_aborted,
     NotificationEventType.dag_run_rejected,
-  ]
+  ],
+  workspaceName?: string
 ) {
   const queries: Record<string, object> = {
     '/notification-channels': {
@@ -100,6 +101,11 @@ function renderRulesPage(
         { id: 'slack', name: 'slack-test', type: 'slack', enabled: true },
         ...extraChannels,
       ],
+    },
+    '/notification-routes/workspaces/{workspaceName}': {
+      enabled: true,
+      inheritGlobal: true,
+      routes: [],
     },
     '/notification-routes/global': {
       enabled: true,
@@ -117,13 +123,23 @@ function renderRulesPage(
   mocks.useQuery.mockImplementation((path: string) => ({
     data: queries[path],
     isLoading: false,
-    mutate: vi.fn(),
+    mutate: vi.fn((data: object) => {
+      queries[path] = data;
+    }),
   }));
 
   render(
     <MemoryRouter>
       <AppBarContext.Provider
-        value={{ setTitle: vi.fn(), selectedRemoteNode: 'local' } as never}
+        value={
+          {
+            setTitle: vi.fn(),
+            selectedRemoteNode: 'local',
+            workspaceSelection: workspaceName
+              ? { kind: 'workspace', workspace: workspaceName }
+              : { kind: 'all' },
+          } as never
+        }
       >
         <NotificationRulesPage />
       </AppBarContext.Provider>
@@ -133,6 +149,9 @@ function renderRulesPage(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.client.PUT.mockImplementation(
+    async (_path: string, { body }: { body: object }) => ({ data: body })
+  );
 });
 
 describe('NotificationsPage', () => {
@@ -276,7 +295,7 @@ describe('NotificationRulesPage', () => {
     expect(
       screen.getByRole('checkbox', { name: 'Succeeded' })
     ).not.toBeChecked();
-    expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
   });
 
   it('allows clearing events while editing and requires a selection to save', async () => {
@@ -292,24 +311,23 @@ describe('NotificationRulesPage', () => {
     expect(
       screen.getByText('Select at least one event before saving.')
     ).toBeVisible();
-    expect(
-      screen.getByText('No enabled route currently sends notifications.')
-    ).toBeVisible();
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
 
     await user.click(screen.getByRole('checkbox', { name: 'Failed' }));
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled();
   });
 
-  it('explains how to add a destination when every channel has a route', () => {
+  it('offers channel creation when every destination has a rule', async () => {
+    const user = userEvent.setup();
     renderRulesPage();
-
+    await user.click(screen.getByRole('button', { name: 'Add rule' }));
+    const dialog = within(screen.getByRole('dialog'));
     expect(
-      screen.getByText(
-        'Each channel can have one route per scope. Edit its events above, or add another channel.'
+      dialog.getByText(
+        'Every channel already has a rule. Edit an existing rule or create another channel.'
       )
     ).toBeVisible();
-    expect(screen.getByRole('link', { name: 'Add channel' })).toHaveAttribute(
+    expect(dialog.getByRole('link', { name: 'Add channel' })).toHaveAttribute(
       'href',
       '/notification-channels'
     );
@@ -321,7 +339,12 @@ describe('NotificationRulesPage', () => {
       { id: 'email', name: 'email-test', type: 'smtp', enabled: true },
     ]);
 
-    await user.click(screen.getByRole('button', { name: 'Add another route' }));
+    await user.click(screen.getByRole('button', { name: 'Add rule' }));
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: /email-test/,
+      })
+    );
 
     expect(
       screen.getByRole('switch', { name: 'Toggle email-test' })
@@ -333,7 +356,6 @@ describe('NotificationRulesPage', () => {
 
   it('edits events through checkboxes and labels and saves them', async () => {
     const user = userEvent.setup();
-    mocks.client.PUT.mockResolvedValue({});
     renderRulesPage();
 
     const failed = screen.getByRole('checkbox', {
@@ -371,6 +393,122 @@ describe('NotificationRulesPage', () => {
           ],
         },
       }
+    );
+  });
+  it('cancels edits without saving and clears the dirty state', async () => {
+    const user = userEvent.setup();
+    renderRulesPage();
+    await user.click(screen.getByRole('checkbox', { name: 'Failed' }));
+    expect(screen.getByText('Unsaved changes')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('checkbox', { name: 'Failed' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Rejected' })).toBeChecked();
+    expect(screen.getByText('All changes saved')).toBeVisible();
+    expect(mocks.client.PUT).not.toHaveBeenCalled();
+  });
+
+  it('deletes a rule through its menu and can undo the deletion', async () => {
+    const user = userEvent.setup();
+    renderRulesPage();
+    await user.click(
+      screen.getByRole('button', { name: 'Rule actions for slack-test' })
+    );
+    await user.click(screen.getByRole('menuitem', { name: 'Delete rule' }));
+    expect(screen.getByText('No notification rules yet')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(
+      screen.getByRole('switch', { name: 'Toggle slack-test' })
+    ).toBeChecked();
+  });
+
+  it('retains edits when saving fails', async () => {
+    const user = userEvent.setup();
+    mocks.client.PUT.mockResolvedValue({ error: { message: 'Save failed' } });
+    renderRulesPage();
+    await user.click(screen.getByRole('checkbox', { name: 'Failed' }));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(screen.getByText('Save failed')).toBeVisible();
+    expect(screen.getByText('Unsaved changes')).toBeVisible();
+    expect(screen.getByRole('checkbox', { name: 'Failed' })).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled();
+  });
+
+  it('tests the destination without saving rule edits', async () => {
+    const user = userEvent.setup();
+    mocks.client.POST.mockResolvedValue({
+      data: { results: [{ delivered: true }] },
+    });
+    renderRulesPage();
+    await user.click(screen.getByRole('checkbox', { name: 'Failed' }));
+    await user.click(screen.getByRole('button', { name: 'Test channel' }));
+    expect(screen.getByText('Test delivered')).toBeVisible();
+    expect(mocks.client.POST).toHaveBeenCalledWith(
+      '/notification-channels/{channelId}/test',
+      {
+        params: {
+          path: { channelId: 'slack' },
+          query: { remoteNode: 'local' },
+        },
+      }
+    );
+    expect(mocks.client.PUT).not.toHaveBeenCalled();
+    expect(screen.getByText('Unsaved changes')).toBeVisible();
+  });
+
+  it('shows delivery failures', async () => {
+    const user = userEvent.setup();
+    mocks.client.POST.mockResolvedValue({
+      data: {
+        results: [{ delivered: false, error: 'Destination unavailable' }],
+      },
+    });
+    renderRulesPage();
+    await user.click(screen.getByRole('button', { name: 'Test channel' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Destination unavailable'
+    );
+  });
+
+  it('configures workspace overrides independently and restores inheritance', async () => {
+    const user = userEvent.setup();
+    renderRulesPage([], [NotificationEventType.dag_run_failed], 'ops');
+    await user.click(screen.getByLabelText('Applies to'));
+    await user.click(screen.getByRole('option', { name: 'ops workspace' }));
+    expect(screen.getByText('Inheriting Global rules')).toBeVisible();
+    expect(screen.getByRole('checkbox', { name: 'Failed' })).toBeDisabled();
+    await user.click(
+      screen.getByRole('button', { name: 'Configure workspace' })
+    );
+    await user.click(screen.getByRole('checkbox', { name: 'Succeeded' }));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(mocks.client.PUT).toHaveBeenLastCalledWith(
+      '/notification-routes/workspaces/{workspaceName}',
+      expect.objectContaining({
+        params: {
+          path: { workspaceName: 'ops' },
+          query: { remoteNode: 'local' },
+        },
+        body: expect.objectContaining({
+          inheritGlobal: false,
+          routes: [
+            expect.objectContaining({
+              events: ['dag.run.failed', 'dag.run.succeeded'],
+            }),
+          ],
+        }),
+      })
+    );
+    expect(screen.getByText('All changes saved')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Use Global rules' }));
+    expect(
+      screen.getByRole('checkbox', { name: 'Succeeded' })
+    ).not.toBeChecked();
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(mocks.client.PUT).toHaveBeenLastCalledWith(
+      '/notification-routes/workspaces/{workspaceName}',
+      expect.objectContaining({
+        body: expect.objectContaining({ inheritGlobal: true }),
+      })
     );
   });
 });
