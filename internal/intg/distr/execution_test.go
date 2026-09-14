@@ -564,6 +564,21 @@ steps:
 	running := f.waitForStatus(ir.Running, executionStatusTimeout())
 	require.Equal(t, ir.Running, running.Status)
 	require.NotEmpty(t, running.Log)
+	defer func() {
+		if !t.Failed() {
+			return
+		}
+		current, err := f.latestStoredStatus()
+		t.Logf("Latest run status: %+v (error: %v)", current, err)
+		paths := []string{current.Log}
+		for _, suffix := range []string{"stdout", "stderr"} {
+			paths = append(paths, findLogFiles(t, f.logDir(), f.dagWrapper.Name, running.DAGRunID, "gated-step", suffix)...)
+		}
+		for _, path := range paths {
+			data, err := os.ReadFile(path)
+			t.Logf("Log %s: %q (error: %v)", path, data, err)
+		}
+	}()
 
 	f.requireEventuallyNoSchedulerError(
 		"small step logs should be visible on the coordinator while the step is running",

@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -2117,8 +2118,8 @@ func TestRemoteRunReporter_SchedulerWriterCloseUsesLiveStream(t *testing.T) {
 		require.NoError(t, logFile.Close())
 	}()
 
-	streamOpened := make(chan struct{}, 1)
-	closeEntered := make(chan struct{}, 1)
+	closeEntered := make(chan struct{})
+	var closeOnce sync.Once
 	unblockClose := make(chan struct{})
 	var unblockOnce sync.Once
 	unblock := func() {
@@ -2129,13 +2130,18 @@ func TestRemoteRunReporter_SchedulerWriterCloseUsesLiveStream(t *testing.T) {
 	defer unblock()
 
 	client := newMockRemoteCoordinatorClient()
-	client.StreamLogsFunc = func(context.Context) (coordinatorv1.CoordinatorService_StreamLogsClient, error) {
-		streamOpened <- struct{}{}
+	client.StreamLogsFunc = func(ctx context.Context) (coordinatorv1.CoordinatorService_StreamLogsClient, error) {
 		stream := newMockStreamLogsClient()
+		var closed atomic.Bool
 		stream.closeAndRecvFunc = func() (*coordinatorv1.StreamLogsResponse, error) {
-			closeEntered <- struct{}{}
-			<-unblockClose
-			return &coordinatorv1.StreamLogsResponse{}, nil
+			assert.False(t, closed.Swap(true), "each live stream should close once")
+			closeOnce.Do(func() { close(closeEntered) })
+			select {
+			case <-unblockClose:
+				return &coordinatorv1.StreamLogsResponse{}, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 		}
 		return stream, nil
 	}
@@ -2167,16 +2173,7 @@ func TestRemoteRunReporter_SchedulerWriterCloseUsesLiveStream(t *testing.T) {
 		t.Fatal("scheduler writer close did not close a live stream")
 	}
 
-	select {
-	case <-streamOpened:
-	default:
-		t.Fatal("remote scheduler writer did not open a live scheduler log stream")
-	}
-	select {
-	case <-closeEntered:
-		t.Fatal("remote scheduler writer closed a live scheduler log stream more than once")
-	default:
-	}
+	require.NoError(t, schedulerWriter.Close())
 }
 
 func TestRemoteRunReporter_MirrorsStepOutputIntoFinalSchedulerLog(t *testing.T) {
