@@ -1049,15 +1049,15 @@ function ChannelListRow({
   return (
     <li
       aria-label={label}
-      className="flex min-h-28 flex-col gap-4 px-5 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between"
+      className="flex flex-col gap-4 p-4 lg:flex-row lg:items-center lg:justify-between"
     >
       <div className="flex min-w-0 items-start gap-4">
         <span className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-muted text-primary">
           <Icon className="size-6" />
         </span>
         <div className="min-w-0 space-y-1">
-          <h3 className="break-words text-lg font-medium">{label}</h3>
-          <p className="break-words text-base text-muted-foreground">
+          <h3 className="break-words text-sm font-medium">{label}</h3>
+          <p className="break-words text-sm text-muted-foreground">
             <I18nText text={providerLabel(channel.type)} /> ·{' '}
             <I18nText text={channelDestination(channel)} />
           </p>
@@ -1078,7 +1078,7 @@ function ChannelListRow({
         </div>
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-3 sm:gap-4">
-        <label className="flex min-h-11 items-center gap-3 text-base text-muted-foreground">
+        <label className="flex min-h-9 items-center gap-3 text-sm text-muted-foreground">
           <I18nText text={channel.enabled ? 'Enabled' : 'Disabled'} />
           <Switch
             checked={channel.enabled}
@@ -1090,7 +1090,7 @@ function ChannelListRow({
         </label>
         <Button
           variant="outline"
-          className="h-11 px-5 text-base"
+          className="px-5"
           disabled={pending !== null}
           onClick={test}
         >
@@ -1099,7 +1099,7 @@ function ChannelListRow({
         </Button>
         <Button
           variant="outline"
-          className="h-11 px-5 text-base"
+          className="px-5"
           disabled={pending !== null}
           onClick={onEdit}
         >
@@ -1110,13 +1110,12 @@ function ChannelListRow({
             <Button
               variant="ghost"
               size="icon"
-              className="size-11"
               disabled={pending !== null}
               aria-label={ts('Channel actions for {channel}', {
                 channel: label,
               })}
             >
-              <MoreHorizontal className="size-5" />
+              <MoreHorizontal className="size-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
@@ -1200,17 +1199,17 @@ export function NotificationChannelsSection({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-2">
           <div className="flex items-center gap-3">
-            <h2 className="text-xl font-semibold">
+            <h2 className="text-base font-semibold">
               <I18nText text={'Channels'} />
             </h2>
-            <span className="text-base text-muted-foreground">
+            <span className="text-sm text-muted-foreground">
               {ts(
                 channels.length === 1 ? '{count} channel' : '{count} channels',
                 { count: channels.length }
               )}
             </span>
           </div>
-          <p className="text-base text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             <I18nText
               text={
                 'Create reusable destinations, then choose events in Rules.'
@@ -1221,7 +1220,6 @@ export function NotificationChannelsSection({
         <div className="flex items-center gap-4 sm:flex-col sm:items-end">
           <Button
             variant="primary"
-            className="h-11 px-4 text-base"
             onClick={() => edit(blankChannel(NotificationProviderType.slack))}
           >
             <Plus className="size-4" />
@@ -1229,7 +1227,7 @@ export function NotificationChannelsSection({
           </Button>
           <Link
             to="/notification-rules"
-            className="inline-flex items-center gap-2 text-base text-primary hover:underline"
+            className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
           >
             <I18nText text={'View rules'} />
             <ArrowRight className="size-4" />
@@ -1244,7 +1242,7 @@ export function NotificationChannelsSection({
           placeholder={ts('Search channels')}
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          className="h-11 pl-10 text-base"
+          className="pl-10"
         />
       </div>
       {filteredChannels.length ? (
@@ -1266,7 +1264,7 @@ export function NotificationChannelsSection({
       ) : (
         <div className="rounded-lg border border-dashed border-border-strong px-6 py-10 text-center">
           <Bell className="mx-auto mb-3 size-7 text-muted-foreground" />
-          <p className="text-base font-medium">
+          <p className="text-sm font-medium">
             <I18nText
               text={
                 channels.length
@@ -1275,7 +1273,7 @@ export function NotificationChannelsSection({
               }
             />
           </p>
-          <p className="mt-2 text-base text-muted-foreground">
+          <p className="mt-2 text-sm text-muted-foreground">
             <I18nText
               text={
                 channels.length
@@ -1318,10 +1316,10 @@ export function NotificationChannelsSection({
             >
               <fieldset
                 disabled={saving}
-                className="min-h-0 space-y-5 overflow-y-auto p-6 [&_input]:h-11 [&_input]:text-base [&_textarea]:text-base"
+                className="min-h-0 space-y-5 overflow-y-auto p-6"
               >
                 {error && (
-                  <p role="alert" className="text-base text-destructive">
+                  <p role="alert" className="text-sm text-destructive">
                     {error}
                   </p>
                 )}
@@ -1337,7 +1335,6 @@ export function NotificationChannelsSection({
                       onChange={(event) =>
                         setEditor({ ...editor, name: event.target.value })
                       }
-                      className="h-11"
                     />
                   </div>
                   <div className="space-y-2">
@@ -1357,10 +1354,7 @@ export function NotificationChannelsSection({
                         })
                       }
                     >
-                      <SelectTrigger
-                        id={`${fieldId}-provider`}
-                        className="h-11 text-base"
-                      >
+                      <SelectTrigger id={`${fieldId}-provider`}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1380,7 +1374,7 @@ export function NotificationChannelsSection({
                   draft={editor}
                   onChange={(next) => setEditor({ ...next, id: editor.id })}
                 />
-                <label className="flex min-h-11 items-center gap-3 text-base">
+                <label className="flex min-h-9 items-center gap-3 text-sm">
                   <Switch
                     checked={editor.enabled}
                     disabled={saving}
@@ -1397,7 +1391,6 @@ export function NotificationChannelsSection({
                   variant="outline"
                   disabled={saving}
                   onClick={() => setEditor(null)}
-                  className="h-11 text-base"
                 >
                   <I18nText text={'Cancel'} />
                 </Button>
@@ -1405,7 +1398,6 @@ export function NotificationChannelsSection({
                   type="submit"
                   variant="primary"
                   disabled={saving || !editor.name.trim()}
-                  className="h-11 text-base"
                 >
                   {saving && <Loader2 className="size-4 animate-spin" />}
                   <I18nText
@@ -1429,13 +1421,13 @@ export function NotificationChannelsSection({
         onSubmit={remove}
         submitDisabled={saving}
       >
-        <p className="break-words text-base">
+        <p className="break-words text-sm">
           {ts('Delete {channel}?', {
             channel: deleting ? deliveryLabel(deleting) : '',
           })}
         </p>
         {error && (
-          <p role="alert" className="mt-3 text-base text-destructive">
+          <p role="alert" className="mt-3 text-sm text-destructive">
             {error}
           </p>
         )}

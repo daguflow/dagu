@@ -430,20 +430,20 @@ function NotificationHeader({
   activeTab?: 'rules' | 'channels';
 }) {
   return (
-    <header className="space-y-7">
+    <header className="flex flex-col gap-4">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-2">
-          <h1 className="text-[30px] font-semibold leading-tight tracking-tight text-foreground">
+        <div>
+          <h1 className="text-lg font-semibold">
             <I18nText text={'Notifications'} />
           </h1>
-          <p className="text-base text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             <I18nText
               text={'Choose where workflow updates go and when they are sent.'}
             />
           </p>
         </div>
         {activeTab === 'rules' && (
-          <Button asChild variant="outline" className="h-10 text-base">
+          <Button asChild variant="outline">
             <Link to="/notification-channels">
               <Mail className="size-4" />
               <I18nText text={'Manage channels'} />
@@ -453,7 +453,7 @@ function NotificationHeader({
       </div>
       <nav
         aria-label="Notifications"
-        className="flex gap-6 border-b border-border"
+        className="inline-flex items-center border-b border-border"
       >
         {(['rules', 'channels'] as const).map((tab) => {
           const Icon = tab === 'rules' ? Bell : Mail;
@@ -467,13 +467,13 @@ function NotificationHeader({
               }
               aria-current={activeTab === tab ? 'page' : undefined}
               className={cn(
-                'inline-flex items-center gap-2 border-b-2 px-2 pb-3 text-base font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                'inline-flex h-12 items-center gap-2 border-b-2 px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 activeTab === tab
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
+                  ? 'border-primary text-foreground [&_svg]:text-primary'
+                  : 'border-transparent text-text-secondary hover:bg-muted hover:text-foreground'
               )}
             >
-              <Icon className="size-5" />
+              <Icon className="size-4" />
               <I18nText text={tab === 'rules' ? 'Rules' : 'Channels'} />
             </Link>
           );
@@ -498,7 +498,7 @@ function ScopeSelector({
   const scopeId = useId();
   return (
     <div className="grid gap-2 sm:grid-cols-[auto_1fr] sm:gap-x-6">
-      <label htmlFor={scopeId} className="text-base font-medium sm:pt-3">
+      <label htmlFor={scopeId} className="text-sm font-medium sm:pt-3">
         <I18nText text={'Applies to'} />
       </label>
       <div className="space-y-2">
@@ -507,10 +507,7 @@ function ScopeSelector({
           disabled={disabled}
           onValueChange={(value) => onChange(value as RouteScopeKey)}
         >
-          <SelectTrigger
-            id={scopeId}
-            className="h-11 w-full max-w-sm text-base"
-          >
+          <SelectTrigger id={scopeId} className="w-full max-w-sm">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -576,10 +573,10 @@ function AddRuleDialog({
                 key={channel.id}
                 type="button"
                 onClick={() => onAdd(channel.id!)}
-                className="flex min-h-14 w-full items-center gap-3 rounded-md border border-border px-4 py-3 text-left hover:border-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex min-h-9 w-full items-center gap-3 rounded-md border border-border px-4 py-3 text-left hover:border-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <Icon className="size-5 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate text-base font-medium">
+                <Icon className="size-4 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">
                   {channelLabel(channel)}
                 </span>
                 <span className="text-sm text-muted-foreground">
@@ -596,7 +593,7 @@ function AddRuleDialog({
             );
           })}
           {availableChannels.length === 0 && (
-            <p className="py-4 text-base text-muted-foreground">
+            <p className="py-4 text-sm text-muted-foreground">
               <I18nText
                 text={
                   channels.length
@@ -713,13 +710,13 @@ function RouteRuleCard({
   return (
     <section
       aria-label={ts('Rule for {channel}', { channel: label })}
-      className="min-w-0 rounded-lg border border-border bg-card px-5 py-5 sm:px-6"
+      className="min-w-0 rounded-lg border border-border bg-card p-4"
     >
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-5">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
           <label
             htmlFor={`${fieldId}-channel`}
-            className="shrink-0 text-base text-muted-foreground"
+            className="shrink-0 text-sm text-muted-foreground"
           >
             <I18nText text={'Send to'} />
           </label>
@@ -732,10 +729,10 @@ function RouteRuleCard({
           >
             <SelectTrigger
               id={`${fieldId}-channel`}
-              className="h-11 w-full min-w-0 sm:w-64 text-base"
+              className="w-full min-w-0 sm:w-64"
             >
               <span className="flex min-w-0 items-center gap-3">
-                <Icon className="size-5 shrink-0 text-primary" />
+                <Icon className="size-4 shrink-0 text-primary" />
                 <SelectValue placeholder={ts('Select channel')} />
               </span>
             </SelectTrigger>
@@ -762,13 +759,13 @@ function RouteRuleCard({
             </SelectContent>
           </Select>
           {channel && (
-            <span className="hidden border-l border-border pl-4 text-base text-muted-foreground sm:block">
+            <span className="hidden border-l border-border pl-4 text-sm text-muted-foreground sm:block">
               <I18nText text={providerLabel(channel.type)} />
             </span>
           )}
         </div>
         <div className="flex items-center gap-4">
-          <label className="flex min-h-11 cursor-pointer items-center gap-3 text-base text-muted-foreground">
+          <label className="flex min-h-9 cursor-pointer items-center gap-3 text-sm text-muted-foreground">
             <I18nText text={'Enabled'} />
             <Switch
               checked={route.enabled}
@@ -786,13 +783,12 @@ function RouteRuleCard({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-11"
                   disabled={disabled}
                   aria-label={ts('Rule actions for {channel}', {
                     channel: label,
                   })}
                 >
-                  <MoreHorizontal className="size-5" />
+                  <MoreHorizontal className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -813,12 +809,12 @@ function RouteRuleCard({
         disabled={readOnly}
         aria-describedby={`${fieldId}-events-help`}
       >
-        <legend className="float-left mb-1 w-full text-lg font-semibold">
+        <legend className="float-left mb-1 w-full text-sm font-semibold">
           <I18nText text={'Notify on'} />
         </legend>
         <p
           id={`${fieldId}-events-help`}
-          className="clear-both mb-4 text-base text-muted-foreground"
+          className="clear-both mb-4 text-sm text-muted-foreground"
         >
           <I18nText
             text={'Send a notification when any selected event occurs.'}
@@ -831,7 +827,7 @@ function RouteRuleCard({
               <label
                 key={event.value}
                 className={cn(
-                  'flex min-h-14 items-center gap-3 rounded-md border px-4 py-3 text-base transition-colors focus-within:ring-2 focus-within:ring-ring',
+                  'flex min-h-9 items-center gap-3 rounded-md border px-4 py-3 text-sm transition-colors focus-within:ring-2 focus-within:ring-ring',
                   readOnly
                     ? 'cursor-default'
                     : 'cursor-pointer hover:border-primary/60',
@@ -843,7 +839,7 @@ function RouteRuleCard({
                 <Checkbox
                   checked={checked}
                   disabled={readOnly}
-                  className="size-5 border-muted-foreground/70 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground data-[state=checked]:border-primary"
+                  className="size-4 border-muted-foreground/70 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground data-[state=checked]:border-primary"
                   onCheckedChange={(checked) =>
                     onUpdate(index, (current) => ({
                       ...current,
@@ -868,13 +864,13 @@ function RouteRuleCard({
           })}
         </div>
         {route.events.length === 0 && (
-          <p role="alert" className="mt-3 text-base text-destructive">
+          <p role="alert" className="mt-3 text-sm text-destructive">
             <I18nText text={'Select at least one event before saving.'} />
           </p>
         )}
       </fieldset>
       {(!channel || !channel.enabled) && (
-        <p className="mt-4 flex items-center gap-2 text-base text-warning">
+        <p className="mt-4 flex items-center gap-2 text-sm text-warning">
           <AlertTriangle className="size-4 shrink-0" />
           <I18nText
             text={
@@ -888,7 +884,6 @@ function RouteRuleCard({
       <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-border pt-4">
         <Button
           variant="outline"
-          className="h-10 text-base"
           onClick={testChannel}
           disabled={disabled || testing || !channel}
         >
@@ -903,7 +898,7 @@ function RouteRuleCard({
           <p
             role={testResult.delivered ? 'status' : 'alert'}
             className={cn(
-              'text-base',
+              'text-sm',
               testResult.delivered ? 'text-success' : 'text-destructive'
             )}
           >
@@ -1253,7 +1248,7 @@ function NotificationRulesContent() {
     : saveGlobalRoutes;
 
   return (
-    <div className="mx-auto w-full max-w-[1120px] space-y-7 pb-3 pt-2 text-base">
+    <div className="flex max-w-7xl flex-col gap-4">
       <NotificationHeader />
       <StatusCard error={error ?? loadError} notice={notice} />
       {isLoading ? (
@@ -1297,7 +1292,6 @@ function NotificationRulesContent() {
               </div>
               <Button
                 variant="outline"
-                className="h-10 text-base"
                 disabled={activeSaving}
                 onClick={
                   inherited
@@ -1319,10 +1313,10 @@ function NotificationRulesContent() {
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <h2 className="text-xl font-semibold">
+                <h2 className="text-base font-semibold">
                   <I18nText text={'Notification rules'} />
                 </h2>
-                <span className="text-base text-muted-foreground">
+                <span className="text-sm text-muted-foreground">
                   {ts(
                     displayedDraft.routes.length === 1
                       ? '{count} rule'
@@ -1338,11 +1332,10 @@ function NotificationRulesContent() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="size-11"
                         disabled={activeSaving}
                         aria-label={ts('Rule settings')}
                       >
-                        <MoreHorizontal className="size-5" />
+                        <MoreHorizontal className="size-4" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
@@ -1366,7 +1359,6 @@ function NotificationRulesContent() {
                   </DropdownMenu>
                   <Button
                     variant="primary"
-                    className="h-11 px-4 text-base"
                     onClick={() => setAddRuleOpen(true)}
                     disabled={activeSaving}
                   >
@@ -1377,7 +1369,7 @@ function NotificationRulesContent() {
               )}
             </div>
             {!displayedDraft.enabled && (
-              <p className="flex items-center gap-2 rounded-md border border-warning/30 bg-warning/10 p-4 text-base text-warning">
+              <p className="flex items-center gap-2 rounded-md border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
                 <Info className="size-4 shrink-0" />
                 <I18nText
                   text={
@@ -1407,7 +1399,7 @@ function NotificationRulesContent() {
                 <p className="font-medium">
                   <I18nText text={'No notification rules yet'} />
                 </p>
-                <p className="mt-2 text-base text-muted-foreground">
+                <p className="mt-2 text-sm text-muted-foreground">
                   <I18nText
                     text={
                       inherited
@@ -1459,7 +1451,7 @@ function NotificationRulesContent() {
             <div className="flex items-center gap-3">
               <Button
                 variant="outline"
-                className="h-11 px-5 text-base"
+                className="px-5"
                 onClick={cancelChanges}
                 disabled={!hasUnsavedChanges || activeSaving}
               >
@@ -1467,7 +1459,7 @@ function NotificationRulesContent() {
               </Button>
               <Button
                 variant="primary"
-                className="h-11 px-5 text-base"
+                className="px-5"
                 onClick={saveActiveRoutes}
                 disabled={!canSave}
               >
@@ -1492,7 +1484,9 @@ function NotificationRulesContent() {
 export function NotificationChannelsPage() {
   const { selectedRemoteNode } = useContext(AppBarContext);
   const remoteNode = selectedRemoteNode || 'local';
-  return <NotificationChannelsContent key={remoteNode} remoteNode={remoteNode} />;
+  return (
+    <NotificationChannelsContent key={remoteNode} remoteNode={remoteNode} />
+  );
 }
 
 function NotificationChannelsContent({ remoteNode }: { remoteNode: string }) {
@@ -1661,7 +1655,7 @@ function NotificationChannelsContent({ remoteNode }: { remoteNode: string }) {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[1120px] space-y-7 pb-3 pt-2">
+    <div className="flex max-w-7xl flex-col gap-4">
       <NotificationHeader activeTab="channels" />
       <StatusCard error={loadError} notice={notice} />
       {isLoading && (
@@ -1680,7 +1674,7 @@ function NotificationChannelsContent({ remoteNode }: { remoteNode: string }) {
           />
           <section
             aria-label={ts('Email delivery')}
-            className="flex flex-wrap items-center justify-between gap-5 rounded-lg border border-border bg-card px-5 py-5 sm:px-6"
+            className="flex flex-wrap items-center justify-between gap-5 rounded-lg border border-border bg-card p-4"
           >
             <div className="flex min-w-0 items-start gap-4">
               <span className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
@@ -1688,7 +1682,7 @@ function NotificationChannelsContent({ remoteNode }: { remoteNode: string }) {
               </span>
               <div className="min-w-0 space-y-2">
                 <div className="flex flex-wrap items-center gap-3">
-                  <h2 className="text-lg font-medium">
+                  <h2 className="text-sm font-semibold">
                     <I18nText text={'Email delivery'} />
                   </h2>
                   <Badge variant={emailConfigured ? 'success' : 'default'}>
@@ -1697,7 +1691,7 @@ function NotificationChannelsContent({ remoteNode }: { remoteNode: string }) {
                     />
                   </Badge>
                 </div>
-                <p className="text-base text-muted-foreground">
+                <p className="text-sm text-muted-foreground">
                   <I18nText text={'Shared sender for email channels.'} />
                 </p>
                 <p className="break-all text-sm text-muted-foreground">
@@ -1709,11 +1703,7 @@ function NotificationChannelsContent({ remoteNode }: { remoteNode: string }) {
                 </p>
               </div>
             </div>
-            <Button
-              variant="outline"
-              className="h-11 text-base"
-              onClick={openSettings}
-            >
+            <Button variant="outline" onClick={openSettings}>
               <I18nText text={'Configure'} />
               <ChevronRight className="size-4" />
             </Button>
@@ -1764,10 +1754,10 @@ function NotificationChannelsContent({ remoteNode }: { remoteNode: string }) {
           >
             <fieldset
               disabled={isSavingSettings}
-              className="min-h-0 space-y-4 overflow-y-auto p-6 [&_input]:h-11 [&_input]:text-base [&_textarea]:text-base"
+              className="min-h-0 space-y-4 overflow-y-auto p-6"
             >
               {settingsError && (
-                <p role="alert" className="text-base text-destructive">
+                <p role="alert" className="text-sm text-destructive">
                   {settingsError}
                 </p>
               )}
@@ -1794,7 +1784,7 @@ function NotificationChannelsContent({ remoteNode }: { remoteNode: string }) {
                   >
                     <I18nProps>
                       <SelectTrigger
-                        className="h-11 w-full text-base"
+                        className="w-full"
                         aria-label="SMTP authentication"
                       >
                         <I18nProps>
@@ -1833,7 +1823,7 @@ function NotificationChannelsContent({ remoteNode }: { remoteNode: string }) {
                     >
                       <I18nProps>
                         <SelectTrigger
-                          className="h-11 w-full text-base"
+                          className="w-full"
                           aria-label="OAuth provider"
                         >
                           <I18nProps>
@@ -2011,7 +2001,7 @@ function NotificationChannelsContent({ remoteNode }: { remoteNode: string }) {
                       />
                     </I18nProps>
                   </label>
-                  <label className="flex h-11 self-end items-center gap-2 rounded-md border border-border px-3 text-sm">
+                  <label className="flex h-9 self-end items-center gap-2 rounded-md border border-border px-3 text-sm">
                     <Checkbox
                       checked={smtpDraft.clearPassword}
                       disabled={!smtpDraft.passwordConfigured}
@@ -2190,7 +2180,6 @@ function NotificationChannelsContent({ remoteNode }: { remoteNode: string }) {
               <Button
                 type="button"
                 variant="outline"
-                className="h-11 text-base"
                 disabled={isSavingSettings}
                 onClick={() => setSettingsOpen(false)}
               >
@@ -2199,7 +2188,6 @@ function NotificationChannelsContent({ remoteNode }: { remoteNode: string }) {
               <Button
                 type="submit"
                 variant="primary"
-                className="h-11 text-base"
                 disabled={isSavingSettings}
               >
                 {isSavingSettings && (
