@@ -511,7 +511,7 @@ func loadDAGsFromData(ctx buildContext, data []byte, filePath string, baseDef *d
 	dags := make([]*ir.DAG, 0, len(docs))
 	for _, doc := range docs {
 		docBaseDef, docBaseRaw := fileBaseDef, fileBaseRaw
-		if doc.index == 0 || workspaceNameFromDocument(doc.data) != "" {
+		if doc.index != 0 && workspaceNameFromDocument(doc.data) != "" {
 			docBaseDef, docBaseRaw, err = loadEffectiveBaseDefinition(ctx.opts, doc.data, baseDef, baseRaw)
 			if err != nil {
 				return nil, fmt.Errorf("failed to process document %d: %w", doc.index, err)
@@ -575,10 +575,6 @@ func decodeDocuments(data []byte) ([]dagDocument, error) {
 
 // loadBaseDefinition loads and decodes the optional base manifest.
 func loadBaseDefinition(opts buildOpts) (*dag, []byte, error) {
-	if opts.Has(buildFlagOnlyMetadata) {
-		return nil, nil, nil
-	}
-
 	baseRaw, description, err := readBaseDefinitionData(opts)
 	if err != nil || len(baseRaw) == 0 {
 		return nil, nil, err
@@ -680,7 +676,7 @@ func loadEffectiveBaseDefinition(opts buildOpts, doc map[string]any, baseDef *da
 
 // readWorkspaceBaseDefinitionData returns raw per-workspace base config data for a named workspace DAG.
 func readWorkspaceBaseDefinitionData(opts buildOpts, doc map[string]any) ([]byte, error) {
-	if opts.Has(buildFlagOnlyMetadata) || opts.WorkspaceBaseConfigDir == "" || len(opts.BaseConfigContent) > 0 {
+	if opts.WorkspaceBaseConfigDir == "" || len(opts.BaseConfigContent) > 0 {
 		return nil, nil
 	}
 
@@ -891,6 +887,9 @@ func buildDocumentBase(ctx buildContext, baseDef *dag) (*ir.DAG, *defaults, erro
 	baseDAG, err := buildBaseDAG(ctx, baseDef)
 	if err != nil {
 		return nil, nil, err
+	}
+	if ctx.opts.Has(buildFlagOnlyMetadata) {
+		return baseDAG, nil, nil
 	}
 
 	baseDefaults, err := decodeDefaults(baseDef.Defaults)

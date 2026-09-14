@@ -145,6 +145,9 @@ env:
   - GREETING: from-global
 `), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(workspaceBaseConfigDir, "ops", "base.yaml"), []byte(`
+queue: pool
+catchup_window: 6h
+overlap_policy: all
 env:
   - GREETING: from-workspace
   - OPS_ONLY: only-in-workspace
@@ -167,34 +170,50 @@ steps:
 	metadataOnly, err := spec.Load(
 		th.Context,
 		dag.Location,
+		spec.WithBaseConfig(th.Config.Paths.BaseConfig),
+		spec.WithWorkspaceBaseConfigDir(workspaceBaseConfigDir),
 		spec.OnlyMetadata(),
 		spec.WithoutEval(),
 		spec.SkipSchemaValidation(),
 	)
 	require.NoError(t, err)
 
+	require.Equal(t, 6*time.Hour, metadataOnly.CatchupWindow)
+	require.Equal(t, ir.OverlapPolicyAll, metadataOnly.OverlapPolicy)
+	require.Equal(t, "pool", metadataOnly.ProcGroup())
+
 	runID := "catchup-run-workspace"
-	err = scheduler.EnqueueCatchupRun(
-		th.Context,
-		th.DAGRunRepository,
-		th.QueueStore,
-		th.Config.Paths.LogDir,
-		th.Config.Paths.ArtifactDir,
-		th.Config.Paths.BaseConfig,
-		workspaceBaseConfigDir,
-		metadataOnly.FileName(),
-		metadataOnly,
-		runID,
-		ir.TriggerTypeCatchUp,
-		time.Date(2026, 2, 7, 12, 0, 0, 0, time.UTC),
-		"",
-	)
-	require.NoError(t, err)
+	// Replaying the same slot after restart must keep a single queue entry.
+	for range 2 {
+		err = scheduler.EnqueueCatchupRun(
+			th.Context,
+			th.DAGRunRepository,
+			th.QueueStore,
+			th.Config.Paths.LogDir,
+			th.Config.Paths.ArtifactDir,
+			th.Config.Paths.BaseConfig,
+			workspaceBaseConfigDir,
+			metadataOnly.FileName(),
+			metadataOnly,
+			runID,
+			ir.TriggerTypeCatchUp,
+			time.Date(2026, 2, 7, 12, 0, 0, 0, time.UTC),
+			"",
+		)
+		require.NoError(t, err)
+
+	}
 
 	attempt, err := th.DAGRunRepository.FindAttempt(th.Context, ir.NewDAGRunRef(dag.Name, runID))
 	require.NoError(t, err)
 	persisted, err := attempt.ReadDAG(th.Context)
 	require.NoError(t, err)
+
+	require.Equal(t, metadataOnly.ProcGroup(), persisted.ProcGroup())
+	require.Equal(t, metadataOnly.OverlapPolicy, persisted.OverlapPolicy)
+	items, err := th.QueueStore.List(th.Context, metadataOnly.ProcGroup())
+	require.NoError(t, err)
+	require.Len(t, items, 1)
 
 	resolvedEnv, err := runtimeenvtransport.Resolve(th.Context, persisted, nil, runtimeenvtransport.Options{})
 	require.NoError(t, err)

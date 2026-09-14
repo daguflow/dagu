@@ -74,12 +74,12 @@ type dag struct {
 	Schedule types.ScheduleValue `yaml:"schedule,omitempty"`
 	// SkipIfSuccessful is the flag to skip the DAG on schedule when it is
 	// executed manually before the schedule.
-	SkipIfSuccessful bool `yaml:"skip_if_successful,omitempty"`
+	SkipIfSuccessful *bool `yaml:"skip_if_successful,omitempty"`
 	// CatchupWindow is the lookback horizon for missed intervals (e.g. "6h", "2d12h").
-	// If set, enables catch-up on scheduler restart. If omitted, no catch-up.
-	CatchupWindow string `yaml:"catchup_window,omitempty"`
-	// OverlapPolicy controls how multiple catch-up runs are handled: "skip" or "all".
-	OverlapPolicy string `yaml:"overlap_policy,omitempty"`
+	// An explicit empty string disables inherited catch-up.
+	CatchupWindow *string `yaml:"catchup_window,omitempty"`
+	// OverlapPolicy controls catch-up overlap: "skip", "all", or "latest".
+	OverlapPolicy *string `yaml:"overlap_policy,omitempty"`
 	// LogDir is the directory where the logs are stored.
 	LogDir string `yaml:"log_dir,omitempty"`
 	// Artifacts config controls optional DAG run artifact storage.
@@ -129,7 +129,7 @@ type dag struct {
 	// Preconditions is the condition to run the DAG.
 	Preconditions any `yaml:"preconditions,omitempty"`
 	// MaxActiveRuns is the maximum number of concurrent dag-runs.
-	MaxActiveRuns int `yaml:"max_active_runs,omitempty"`
+	MaxActiveRuns *int `yaml:"max_active_runs,omitempty"`
 	// MaxActiveSteps is the maximum number of concurrent steps.
 	MaxActiveSteps int `yaml:"max_active_steps,omitempty"`
 	// Params is the default parameters for the steps.
@@ -143,7 +143,7 @@ type dag struct {
 	// DeprecatedTags is the deprecated tags field for backward compatibility.
 	DeprecatedTags types.LabelsValue `yaml:"tags,omitempty"`
 	// Queue is the name of the queue to assign this DAG to.
-	Queue string `yaml:"queue,omitempty"`
+	Queue *string `yaml:"queue,omitempty"`
 	// RetryPolicy is the DAG-level retry policy.
 	RetryPolicy *dagRetryPolicy `yaml:"retry_policy,omitempty"`
 	// MaxOutputSize is the maximum size of the output for each step.
@@ -933,6 +933,23 @@ func composeBuildDAGContext(base, current *ir.DAG, currentSpec *dag) (*ir.DAG, e
 		return nil, err
 	}
 	applyHistoryRetentionOverride(effective, currentSpec.HistRetentionDays != nil, currentSpec.HistRetentionRuns != nil)
+	// Built-in defaults must not replace inherited values, while explicit
+	// false and empty values must be able to disable inherited behavior.
+	if currentSpec.OverlapPolicy == nil {
+		effective.OverlapPolicy = base.OverlapPolicy
+	}
+	if currentSpec.MaxActiveRuns == nil {
+		effective.MaxActiveRuns = base.MaxActiveRuns
+	}
+	if currentSpec.SkipIfSuccessful != nil {
+		effective.SkipIfSuccessful = current.SkipIfSuccessful
+	}
+	if currentSpec.CatchupWindow != nil {
+		effective.CatchupWindow = current.CatchupWindow
+	}
+	if currentSpec.Queue != nil {
+		effective.Queue = current.Queue
+	}
 
 	return effective, nil
 }
@@ -1036,8 +1053,8 @@ func buildLabels(_ buildContext, d *dag) (ir.Labels, error) {
 }
 
 func buildMaxActiveRuns(_ buildContext, d *dag) (int, error) {
-	if d.MaxActiveRuns != 0 {
-		return d.MaxActiveRuns, nil
+	if d.MaxActiveRuns != nil && *d.MaxActiveRuns != 0 {
+		return *d.MaxActiveRuns, nil
 	}
 	return 1, nil // Default
 }
@@ -1047,7 +1064,10 @@ func buildMaxActiveSteps(_ buildContext, d *dag) (int, error) {
 }
 
 func buildQueue(_ buildContext, d *dag) (string, error) {
-	return strings.TrimSpace(d.Queue), nil
+	if d.Queue == nil {
+		return "", nil
+	}
+	return strings.TrimSpace(*d.Queue), nil
 }
 
 func buildDAGRetryPolicy(_ buildContext, d *dag) (*ir.DAGRetryPolicy, error) {
@@ -1092,18 +1112,21 @@ func buildMaxOutputSize(_ buildContext, d *dag) (int, error) {
 }
 
 func buildSkipIfSuccessful(_ buildContext, d *dag) (bool, error) {
-	return d.SkipIfSuccessful, nil
+	return d.SkipIfSuccessful != nil && *d.SkipIfSuccessful, nil
 }
 
 func buildCatchupWindow(_ buildContext, d *dag) (time.Duration, error) {
-	if d.CatchupWindow == "" {
+	if d.CatchupWindow == nil || *d.CatchupWindow == "" {
 		return 0, nil
 	}
-	return ParseDuration(d.CatchupWindow)
+	return ParseDuration(*d.CatchupWindow)
 }
 
 func buildOverlapPolicy(_ buildContext, d *dag) (ir.OverlapPolicy, error) {
-	return ir.ParseOverlapPolicy(d.OverlapPolicy)
+	if d.OverlapPolicy == nil {
+		return ir.OverlapPolicySkip, nil
+	}
+	return ir.ParseOverlapPolicy(*d.OverlapPolicy)
 }
 
 func buildLogDir(_ buildContext, d *dag) (string, error) {

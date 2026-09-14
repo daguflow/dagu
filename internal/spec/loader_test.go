@@ -682,6 +682,85 @@ steps:
 	})
 }
 
+func TestSchedulingInheritance(t *testing.T) {
+	t.Parallel()
+
+	base := "overlap_policy: all\ncatchup_window: 24h\nskip_if_successful: true\nmax_active_runs: 3\nqueue: pool\n"
+	for _, source := range []string{"file", "workspace", "embedded"} {
+		t.Run(source, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			basePath := filepath.Join(root, "base.yaml")
+			require.NoError(t, os.WriteFile(basePath, []byte(base), 0600))
+			opts := []spec.LoadOption{spec.WithoutEval()}
+			switch source {
+			case "file":
+				opts = append(opts, spec.WithBaseConfig(basePath))
+			case "workspace":
+				workspaceDir := filepath.Join(root, "workspaces")
+				require.NoError(t, os.MkdirAll(filepath.Join(workspaceDir, "ops"), 0750))
+				require.NoError(t, os.WriteFile(filepath.Join(workspaceDir, "ops", "base.yaml"), []byte(base), 0600))
+				require.NoError(t, os.WriteFile(basePath, []byte("overlap_policy: latest\ncatchup_window: 1h\nqueue: global\nmax_active_runs: 2\n"), 0600))
+				opts = append(opts, spec.WithBaseConfig(basePath), spec.WithWorkspaceBaseConfigDir(workspaceDir))
+			case "embedded":
+				// Transported content must take precedence over local base files.
+				require.NoError(t, os.WriteFile(basePath, []byte("overlap_policy: invalid\n"), 0600))
+				opts = append(opts, spec.WithBaseConfig(basePath), spec.WithBaseConfigContent([]byte(base)))
+			}
+
+			for _, tc := range []struct {
+				name, authored string
+				policy         ir.OverlapPolicy
+				window         time.Duration
+				skip           bool
+				runs           int
+				queue          string
+			}{
+				{name: "Inherit", policy: ir.OverlapPolicyAll, window: 24 * time.Hour, skip: true, runs: 3, queue: "pool"},
+				{name: "Override", authored: "overlap_policy: latest\ncatchup_window: 2h\nmax_active_runs: 2\nqueue: child\n", policy: ir.OverlapPolicyLatest, window: 2 * time.Hour, skip: true, runs: 2, queue: "child"},
+				{name: "Disable", authored: "overlap_policy: skip\ncatchup_window: \"\"\nskip_if_successful: false\nmax_active_runs: 0\nqueue: \"\"\n", policy: ir.OverlapPolicySkip, runs: 1},
+				{name: "EmptyPolicy", authored: "overlap_policy: \"\"\n", policy: ir.OverlapPolicySkip, window: 24 * time.Hour, skip: true, runs: 3, queue: "pool"},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					path := createTempYAMLFile(t, "name: inherited\nlabels: [workspace=ops]\n"+tc.authored+"steps:\n  - run: echo tick\n")
+					for _, metadata := range []bool{false, true} {
+						t.Run(fmt.Sprintf("Metadata=%t", metadata), func(t *testing.T) {
+							loadOpts := append([]spec.LoadOption{}, opts...)
+							if metadata {
+								loadOpts = append(loadOpts, spec.OnlyMetadata(), spec.SkipSchemaValidation())
+							}
+							dag, err := spec.Load(t.Context(), path, loadOpts...)
+							require.NoError(t, err)
+							assert.Equal(t, tc.policy, dag.OverlapPolicy)
+							assert.Equal(t, tc.window, dag.CatchupWindow)
+							assert.Equal(t, tc.skip, dag.SkipIfSuccessful)
+							assert.Equal(t, tc.runs, dag.MaxActiveRuns)
+							assert.Equal(t, tc.queue, dag.Queue)
+							group := tc.queue
+							if group == "" {
+								group = dag.Name
+							}
+							assert.Equal(t, group, dag.ProcGroup())
+						})
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestSchedulingDefaults(t *testing.T) {
+	t.Parallel()
+	path := createTempYAMLFile(t, "steps:\n  - run: echo tick\n")
+	dag, err := spec.Load(t.Context(), path)
+	require.NoError(t, err)
+	assert.Equal(t, ir.OverlapPolicySkip, dag.OverlapPolicy)
+	assert.Equal(t, 1, dag.MaxActiveRuns)
+	assert.Zero(t, dag.CatchupWindow)
+	assert.False(t, dag.SkipIfSuccessful)
+	assert.Equal(t, dag.Name, dag.ProcGroup())
+}
+
 func TestLoadBaseConfig(t *testing.T) {
 	t.Parallel()
 
@@ -1847,21 +1926,30 @@ steps:
     run: echo "child"
 `), 0600))
 
-	dag, err := spec.Load(context.Background(), dagFile,
-		spec.WithBaseConfig(globalBase),
-		spec.WithWorkspaceBaseConfigDir(workspaceConfigDir),
-	)
-	require.NoError(t, err)
+	for _, metadata := range []bool{false, true} {
+		t.Run(fmt.Sprintf("Metadata=%t", metadata), func(t *testing.T) {
+			loadMode := spec.WithoutEval()
+			if metadata {
+				loadMode = spec.OnlyMetadata()
+			}
+			dag, err := spec.Load(context.Background(), dagFile,
+				spec.WithBaseConfig(globalBase),
+				spec.WithWorkspaceBaseConfigDir(workspaceConfigDir),
+				loadMode,
+			)
+			require.NoError(t, err)
 
-	childDAG, ok := dag.LocalDAGs["child-task"]
-	require.True(t, ok)
+			childDAG, ok := dag.LocalDAGs["child-task"]
+			require.True(t, ok)
 
-	assert.Contains(t, dag.Env, "WORKSPACE_ONLY=ops")
-	assert.Contains(t, dag.Env, "SHARED=workspace")
-	assert.Contains(t, childDAG.Env, "GLOBAL_ONLY=global")
-	assert.Contains(t, childDAG.Env, "WORKSPACE_ONLY=ops")
-	assert.Contains(t, childDAG.Env, "SHARED=workspace")
-	assert.Contains(t, string(childDAG.BaseConfigData), "WORKSPACE_ONLY")
+			assert.Contains(t, dag.Env, "WORKSPACE_ONLY=ops")
+			assert.Contains(t, dag.Env, "SHARED=workspace")
+			assert.Contains(t, childDAG.Env, "GLOBAL_ONLY=global")
+			assert.Contains(t, childDAG.Env, "WORKSPACE_ONLY=ops")
+			assert.Contains(t, childDAG.Env, "SHARED=workspace")
+			assert.Contains(t, string(childDAG.BaseConfigData), "WORKSPACE_ONLY")
+		})
+	}
 }
 
 func TestLoadYAMLWithOpts_TypeInheritanceInMultiDocumentYAML(t *testing.T) {
@@ -3205,4 +3293,45 @@ steps:
 		require.Len(t, dag.Steps, 1)
 		require.Equal(t, "SIGTERM", dag.Steps[0].SignalOnStop)
 	})
+}
+
+func TestMetadataBaseSkipsRuntimeFields(t *testing.T) {
+	t.Parallel()
+	base := createTempYAMLFile(t, `
+catchup_window: 6h
+env:
+  DYNAMIC: "`+"`exit 7`"+`"
+params:
+  schema: missing-schema.json
+  values:
+    region: tokyo
+defaults:
+  timeout_sec: invalid
+handler_on:
+  success:
+    run: echo success
+`)
+	path := createTempYAMLFile(t, "steps:\n  - run: echo tick\n")
+	dag, err := spec.Load(t.Context(), path, spec.WithBaseConfig(base), spec.OnlyMetadata(), spec.WithoutEval(), spec.SkipSchemaValidation())
+	require.NoError(t, err)
+	assert.Equal(t, 6*time.Hour, dag.CatchupWindow)
+	assert.Contains(t, dag.Env, "DYNAMIC=`exit 7`")
+	assert.Empty(t, dag.Steps)
+	assert.Nil(t, dag.HandlerOn.Success)
+}
+
+func TestMetadataBaseValidation(t *testing.T) {
+	t.Parallel()
+	for _, base := range []string{"overlap_policy: invalid", "catchup_window: 0s", "catchup_window: -1h", "schedule: invalid"} {
+		t.Run(base, func(t *testing.T) {
+			basePath := createTempYAMLFile(t, base)
+			path := createTempYAMLFile(t, "steps:\n  - run: echo tick\n")
+			opts := []spec.LoadOption{spec.WithBaseConfig(basePath), spec.OnlyMetadata(), spec.WithoutEval()}
+			_, err := spec.Load(t.Context(), path, opts...)
+			require.Error(t, err)
+			dag, err := spec.Load(t.Context(), path, append(opts, spec.WithAllowBuildErrors())...)
+			require.NoError(t, err)
+			require.NotEmpty(t, dag.BuildErrors)
+		})
+	}
 }

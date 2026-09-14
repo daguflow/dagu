@@ -133,7 +133,6 @@ func NewStore(baseDir string, opts ...Option) *Store {
 		searchPaths:            searchPaths,
 		baseConfigPath:         options.BaseConfigPath,
 		workspaceBaseConfigDir: options.WorkspaceBaseConfigDir,
-		baseConfigState:        describeBaseConfigStateSet(options.BaseConfigPath, options.WorkspaceBaseConfigDir),
 		skipExamples:           options.SkipExamples,
 		recursive:              options.Recursive,
 		symlinks:               options.Symlinks,
@@ -149,7 +148,7 @@ type Store struct {
 	searchPaths            []string                 // Additional search paths for DAG files
 	baseConfigPath         string                   // Optional base config file applied when loading DAGs
 	workspaceBaseConfigDir string                   // Optional directory containing workspace base configs
-	baseConfigState        string                   // Last observed base config state for cache/index invalidation
+	baseConfigState        string                   // Empty until first load so indexes from previous processes are invalidated
 	skipExamples           bool                     // Skip creating example DAGs
 	recursive              bool                     // Discover DAG definitions in subdirectories
 	symlinks               bool                     // Include recursive file symlinks and external targets
