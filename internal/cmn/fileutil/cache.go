@@ -91,15 +91,14 @@ func (c *Cache[T]) LoadLatest(
 func (c *Cache[T]) LoadLatestByKey(
 	key, filePath string, loader func() (T, error),
 ) (T, error) {
-	stale, fi, err := c.isStaleByKey(key, filePath)
+	fi, err := os.Stat(filePath)
 	if err != nil {
 		var zero T
-		return zero, err
+		return zero, fmt.Errorf("failed to stat file %s: %w", filePath, err)
 	}
-	if !stale {
-		if e, ok := c.lru.Get(key); ok {
-			return e.data, nil
-		}
+	// Validate the same entry that is returned; another load may replace it.
+	if e, ok := c.lru.Get(key); ok && !e.isStale(fi) {
+		return e.data, nil
 	}
 	data, err := loader()
 	if err != nil {
@@ -139,6 +138,9 @@ func (c *Cache[T]) isStaleByKey(key, filePath string) (bool, os.FileInfo, error)
 	if !ok {
 		return true, fi, nil
 	}
-	t := fi.ModTime().UnixNano()
-	return e.lastModified < t || e.size != fi.Size(), fi, nil
+	return e.isStale(fi), fi, nil
+}
+
+func (e entry[T]) isStale(fi os.FileInfo) bool {
+	return e.lastModified != fi.ModTime().UnixNano() || e.size != fi.Size()
 }

@@ -27,7 +27,7 @@ type filePoller struct {
 	// the duration between polls.
 	interval time.Duration
 	// watches is the list of files currently being polled, close the associated channel to stop the watch
-	watches map[string]struct{}
+	watches map[string]chan struct{}
 	// Will be closed when done.
 	done chan struct{}
 	// events is the channel to listen to for watch events
@@ -61,14 +61,15 @@ func (w *filePoller) Add(name string) error {
 	}
 
 	if w.watches == nil {
-		w.watches = make(map[string]struct{})
+		w.watches = make(map[string]chan struct{})
 	}
 	if _, exists := w.watches[name]; exists {
 		return errWatchExists
 	}
-	w.watches[name] = struct{}{}
+	stop := make(chan struct{})
+	w.watches[name] = stop
 
-	go w.watch(item)
+	go w.watch(item, stop)
 	return nil
 }
 
@@ -84,10 +85,11 @@ func (w *filePoller) remove(name string) error {
 		return errPollerClosed
 	}
 
-	_, exists := w.watches[name]
+	stop, exists := w.watches[name]
 	if !exists {
 		return errNoSuchWatch
 	}
+	close(stop)
 	delete(w.watches, name)
 	return nil
 }
@@ -115,17 +117,17 @@ func (w *filePoller) Close() error {
 	}
 	w.closed = true
 	close(w.done)
-	for name := range w.watches {
-		_ = w.remove(name)
-	}
+	clear(w.watches)
 
 	return nil
 }
 
 // sendEvent publishes the specified event to the events channel
-func (w *filePoller) sendEvent(e fsnotify.Event) error {
+func (w *filePoller) sendEvent(e fsnotify.Event, stop <-chan struct{}) error {
 	select {
 	case w.events <- e:
+	case <-stop:
+		return errNoSuchWatch
 	case <-w.done:
 		return errPollerClosed
 	}
@@ -133,30 +135,34 @@ func (w *filePoller) sendEvent(e fsnotify.Event) error {
 }
 
 // sendErr publishes the specified error to the errors channel
-func (w *filePoller) sendErr(e error) error {
+func (w *filePoller) sendErr(e error, stop <-chan struct{}) error {
 	select {
 	case w.errors <- e:
+	case <-stop:
+		return errNoSuchWatch
 	case <-w.done:
 		return errPollerClosed
 	}
 	return nil
 }
 
-// watch watches item for changes until done is closed.
-func (w *filePoller) watch(item *itemToWatch) {
+// watch observes changes until its watch is removed or the poller closes.
+func (w *filePoller) watch(item *itemToWatch, stop <-chan struct{}) {
 	ticker := time.NewTicker(w.interval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
+		case <-stop:
+			return
 		case <-w.done:
 			return
 		}
 
 		evs, err := item.checkForChanges()
 		if err != nil {
-			if err := w.sendErr(err); err != nil {
+			if err := w.sendErr(err, stop); err != nil {
 				return
 			}
 		}
@@ -164,7 +170,7 @@ func (w *filePoller) watch(item *itemToWatch) {
 		item.left, item.right = item.right, item.left
 
 		for _, ev := range evs {
-			if err := w.sendEvent(ev); err != nil {
+			if err := w.sendEvent(ev, stop); err != nil {
 				return
 			}
 		}

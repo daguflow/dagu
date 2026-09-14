@@ -3,9 +3,7 @@ steps:
   - name: write
     action: exec
     with:
-      command: go
+      command: ./write_arg
       args:
-        - run
-        - ./write_arg.go
         - direct-process-env.txt
         - $DIRECT_PROCESS_ONLY

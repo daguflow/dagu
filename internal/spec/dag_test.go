@@ -804,7 +804,7 @@ func TestBuildMaxActiveRuns(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := &dag{MaxActiveRuns: tt.input}
+			d := &dag{MaxActiveRuns: &tt.input}
 			result, err := buildMaxActiveRuns(testBuildContext(), d)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, result)
@@ -836,7 +836,7 @@ func TestBuildQueue(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := &dag{Queue: tt.input}
+			d := &dag{Queue: &tt.input}
 			result, err := buildQueue(testBuildContext(), d)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, result)
@@ -867,7 +867,7 @@ func TestBuildSkipIfSuccessful(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := &dag{SkipIfSuccessful: tt.input}
+			d := &dag{SkipIfSuccessful: &tt.input}
 			result, err := buildSkipIfSuccessful(testBuildContext(), d)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, result)

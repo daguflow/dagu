@@ -1413,6 +1413,7 @@ steps:
 	dag, err := store.GetMetadata(ctx, "cache-refresh")
 	require.NoError(t, err)
 	require.Equal(t, 1, cache.Size())
+	require.Equal(t, ir.TypeGraph, dag.Type)
 
 	time.Sleep(10 * time.Millisecond)
 	require.NoError(t, os.WriteFile(baseConfig, []byte("type: chain\n"), 0600))
@@ -1420,6 +1421,7 @@ steps:
 	reloaded, err := store.GetMetadata(ctx, "cache-refresh")
 	require.NoError(t, err)
 	require.NotSame(t, dag, reloaded)
+	require.Equal(t, ir.TypeChain, reloaded.Type)
 	require.Equal(t, 1, cache.Size())
 }
 
@@ -1456,6 +1458,7 @@ steps:
 	dag, err := store.GetMetadata(ctx, "workspace-cache-refresh")
 	require.NoError(t, err)
 	require.Equal(t, 1, cache.Size())
+	require.Equal(t, 1, dag.MaxActiveSteps)
 
 	time.Sleep(10 * time.Millisecond)
 	require.NoError(t, os.WriteFile(workspaceBaseConfig, []byte("max_active_steps: 2\n"), 0600))
@@ -1463,6 +1466,7 @@ steps:
 	reloaded, err := store.GetMetadata(ctx, "workspace-cache-refresh")
 	require.NoError(t, err)
 	require.NotSame(t, dag, reloaded)
+	require.Equal(t, 2, reloaded.MaxActiveSteps)
 	require.Equal(t, 1, cache.Size())
 }
 
@@ -2396,4 +2400,91 @@ func TestLabelListUsesIndex(t *testing.T) {
 	require.Empty(t, errList2)
 	assert.ElementsMatch(t, expectedLabels, labels2)
 	assert.ElementsMatch(t, labels1, labels2)
+}
+
+func TestBaseConfigLifecycle(t *testing.T) {
+	for _, scope := range []string{"global", "workspace"} {
+		t.Run(scope, func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, "dags")
+			require.NoError(t, os.MkdirAll(dir, 0750))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "scheduled.yaml"), []byte("labels: [workspace=ops]\nsteps:\n  - run: echo tick\n"), 0600))
+			basePath := filepath.Join(root, "base.yaml")
+			opts := []Option{WithSkipExamples(true), WithBaseConfig(basePath)}
+			if scope == "workspace" {
+				workspaceDir := filepath.Join(root, "workspaces")
+				require.NoError(t, os.MkdirAll(filepath.Join(workspaceDir, "ops"), 0750))
+				basePath = filepath.Join(workspaceDir, "ops", "base.yaml")
+				opts = append(opts, WithWorkspaceBaseConfigDir(workspaceDir))
+			}
+			newStore := func() *persis.DAGRepository {
+				return newRepository(dir, append(opts, WithFileCache(fileutil.NewCache[*ir.DAG]("base-lifecycle", 16, 0)))...)
+			}
+			repo := newStore()
+			check := func(want string) {
+				// Listing first also checks an index left by another store instance.
+				result, issues, err := repo.List(t.Context(), persis.DAGListOptions{})
+				require.NoError(t, err)
+				require.Empty(t, issues)
+				require.Len(t, result.Items, 1)
+				metadata, err := repo.GetMetadata(t.Context(), "scheduled")
+				require.NoError(t, err)
+				for _, dag := range []*ir.DAG{result.Items[0].DAG, metadata} {
+					if want == "" {
+						require.Empty(t, dag.Schedule)
+					} else {
+						require.Len(t, dag.Schedule, 1)
+						require.Equal(t, want, dag.Schedule[0].Expression)
+					}
+				}
+			}
+			check("")
+			require.NoError(t, os.WriteFile(basePath, []byte("schedule: '0 * * * *'\n"), 0600))
+			check("0 * * * *")
+			require.NoError(t, os.WriteFile(basePath, []byte("schedule: '30 * * * *'\n"), 0600))
+			repo = newStore()
+			check("30 * * * *")
+			require.NoError(t, os.Remove(basePath))
+			check("")
+		})
+	}
+}
+
+func TestMetadataInFlightBaseChange(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	dir := filepath.Join(root, "dags")
+	require.NoError(t, os.MkdirAll(dir, 0750))
+	path := filepath.Join(dir, "scheduled.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("steps:\n  - run: echo tick\n"), 0600))
+	base := filepath.Join(root, "base.yaml")
+	require.NoError(t, os.WriteFile(base, []byte("queue: old\n"), 0600))
+	cache := fileutil.NewCache[*ir.DAG]("in-flight", 2, 0)
+	store := NewStore(dir, WithBaseConfig(base), WithFileCache(cache))
+	old, err := store.GetMetadata(t.Context(), "scheduled")
+	require.NoError(t, err)
+	resolved, err := store.locateDAG(t.Context(), "scheduled")
+	require.NoError(t, err)
+	key := store.metadataCacheKey(resolved, store.refreshBaseConfigState())
+	cache.Invalidate(key)
+	started, release := make(chan struct{}), make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		_, err := cache.LoadLatestByKey(key, path, func() (*ir.DAG, error) {
+			close(started)
+			<-release
+			return old, nil
+		})
+		done <- err
+	}()
+	<-started
+	require.NoError(t, os.WriteFile(base, []byte("queue: updated\n"), 0600))
+	fresh, loadErr := store.GetMetadata(t.Context(), "scheduled")
+	close(release)
+	require.NoError(t, <-done)
+	require.NoError(t, loadErr)
+	require.Equal(t, "updated", fresh.ProcGroup())
+	current, err := store.GetMetadata(t.Context(), "scheduled")
+	require.NoError(t, err)
+	require.Equal(t, "updated", current.ProcGroup())
 }

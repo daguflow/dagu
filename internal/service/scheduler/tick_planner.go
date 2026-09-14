@@ -17,29 +17,24 @@ import (
 	"github.com/dagucloud/dagu/v2/internal/cmn/logger/tag"
 	"github.com/dagucloud/dagu/v2/internal/cmn/stringutil"
 	"github.com/dagucloud/dagu/v2/internal/ir"
+	"github.com/dagucloud/dagu/v2/internal/persis"
 	"github.com/dagucloud/dagu/v2/internal/schedulerstate"
 )
 
 // DAGChangeType identifies the kind of DAG lifecycle event.
-type DAGChangeType int
+type DAGChangeType = persis.DAGChangeType
 
 const (
-	DAGChangeAdded DAGChangeType = iota
-	DAGChangeUpdated
-	DAGChangeDeleted
+	DAGChangeAdded   = persis.DAGChangeAdded
+	DAGChangeUpdated = persis.DAGChangeUpdated
+	DAGChangeDeleted = persis.DAGChangeDeleted
 )
 
-// DAGChangeEvent represents a DAG lifecycle event emitted by the EntryReader.
-type DAGChangeEvent struct {
-	DAGEntry
-	Type DAGChangeType
-}
+// DAGChangeEvent represents a DAG lifecycle event.
+type DAGChangeEvent = persis.DAGChangeEvent
 
 // DAGEntry pairs a DAG definition with its stable persistence identity.
-type DAGEntry struct {
-	DefinitionID string
-	DAG          *ir.DAG
-}
+type DAGEntry = persis.DAGEntry
 
 const deletedWatermarkGrace = 2 * time.Minute
 

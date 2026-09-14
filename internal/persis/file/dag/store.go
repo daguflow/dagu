@@ -133,7 +133,6 @@ func NewStore(baseDir string, opts ...Option) *Store {
 		searchPaths:            searchPaths,
 		baseConfigPath:         options.BaseConfigPath,
 		workspaceBaseConfigDir: options.WorkspaceBaseConfigDir,
-		baseConfigState:        describeBaseConfigStateSet(options.BaseConfigPath, options.WorkspaceBaseConfigDir),
 		skipExamples:           options.SkipExamples,
 		recursive:              options.Recursive,
 		symlinks:               options.Symlinks,
@@ -149,7 +148,7 @@ type Store struct {
 	searchPaths            []string                 // Additional search paths for DAG files
 	baseConfigPath         string                   // Optional base config file applied when loading DAGs
 	workspaceBaseConfigDir string                   // Optional directory containing workspace base configs
-	baseConfigState        string                   // Last observed base config state for cache/index invalidation
+	baseConfigState        string                   // Empty until first load so indexes from previous processes are invalidated
 	skipExamples           bool                     // Skip creating example DAGs
 	recursive              bool                     // Discover DAG definitions in subdirectories
 	symlinks               bool                     // Include recursive file symlinks and external targets
@@ -264,25 +263,22 @@ func (store *Store) defaultLoadOptions(opts ...spec.LoadOption) []spec.LoadOptio
 	return loadOpts
 }
 
-func (store *Store) refreshBaseConfigState() {
-	if store.baseConfigPath == "" && store.workspaceBaseConfigDir == "" {
-		return
-	}
-
-	state := describeBaseConfigStateSet(store.baseConfigPath, store.workspaceBaseConfigDir)
-
+func (store *Store) refreshBaseConfigState() string {
 	store.baseConfigMu.Lock()
 	defer store.baseConfigMu.Unlock()
 
-	if state == store.baseConfigState {
-		return
+	if store.baseConfigPath == "" && store.workspaceBaseConfigDir == "" {
+		return store.baseConfigState
 	}
-
-	if store.fileCache != nil {
-		store.fileCache.InvalidateAll()
+	state := describeBaseConfigStateSet(store.baseConfigPath, store.workspaceBaseConfigDir)
+	if state != store.baseConfigState {
+		if store.fileCache != nil {
+			store.fileCache.InvalidateAll()
+		}
+		store.invalidateIndex()
+		store.baseConfigState = state
 	}
-	store.invalidateIndex()
-	store.baseConfigState = state
+	return store.baseConfigState
 }
 
 func describeBaseConfigStateSet(basePath, workspaceDir string) string {
@@ -357,7 +353,7 @@ func (store *Store) GetMetadata(ctx context.Context, name string) (*ir.DAG, erro
 	if err != nil {
 		return nil, fmt.Errorf("failed to locate DAG %s in search paths (%v): %w", name, store.searchPaths, err)
 	}
-	store.refreshBaseConfigState()
+	baseState := store.refreshBaseConfigState()
 	loadOpts := store.defaultLoadOptions(
 		spec.WithDefaultName(fileutil.TrimYAMLFileExtension(filepath.Base(resolved.EntryPath))),
 		spec.OnlyMetadata(),
@@ -367,13 +363,15 @@ func (store *Store) GetMetadata(ctx context.Context, name string) (*ir.DAG, erro
 	if store.fileCache == nil {
 		return spec.Load(ctx, resolved.ResolvedPath, loadOpts...)
 	}
-	return store.fileCache.LoadLatestByKey(metadataCacheKey(resolved), resolved.ResolvedPath, func() (*ir.DAG, error) {
+	return store.fileCache.LoadLatestByKey(store.metadataCacheKey(resolved, baseState), resolved.ResolvedPath, func() (*ir.DAG, error) {
 		return spec.Load(ctx, resolved.ResolvedPath, loadOpts...)
 	})
 }
 
-func metadataCacheKey(resolved ResolvedFile) string {
-	return resolved.EntryPath + "\x00" + resolved.ResolvedPath
+// Cache keys include base state so an older in-flight load cannot replace current metadata.
+func (store *Store) metadataCacheKey(resolved ResolvedFile, baseState string) string {
+	return fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%s", store.baseConfigPath,
+		store.workspaceBaseConfigDir, resolved.EntryPath, resolved.ResolvedPath, baseState)
 }
 
 // FileMode used for newly created DAG files
@@ -391,7 +389,7 @@ func (store *Store) Update(ctx context.Context, name string, yamlSpec []byte) er
 		return err
 	}
 	if store.fileCache != nil {
-		store.fileCache.Invalidate(metadataCacheKey(resolved))
+		store.fileCache.Invalidate(store.metadataCacheKey(resolved, store.refreshBaseConfigState()))
 	}
 	store.invalidateIndex()
 	return nil
@@ -429,7 +427,7 @@ func (store *Store) Delete(ctx context.Context, name string) error {
 		return err
 	}
 	if store.fileCache != nil {
-		store.fileCache.Invalidate(metadataCacheKey(resolved))
+		store.fileCache.Invalidate(store.metadataCacheKey(resolved, store.refreshBaseConfigState()))
 	}
 	store.invalidateIndex()
 	return nil

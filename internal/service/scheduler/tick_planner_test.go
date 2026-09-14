@@ -7,6 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	filedag "github.com/dagucloud/dagu/v2/internal/persis/file/dag"
+	"github.com/dagucloud/dagu/v2/internal/spec"
+	"github.com/dagucloud/dagu/v2/internal/testutil"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -2478,6 +2483,134 @@ func TestComputePrevExecTime(t *testing.T) {
 			sched := mustParseSchedule(t, tt.schedule)
 			got := computePrevExecTime(tt.next, sched)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestInheritedScheduling(t *testing.T) {
+	for _, recursive := range []bool{false, true} {
+		for _, workspaceBase := range []bool{false, true} {
+			for _, policy := range []ir.OverlapPolicy{ir.OverlapPolicySkip, ir.OverlapPolicyAll, ir.OverlapPolicyLatest} {
+				t.Run(fmt.Sprintf("Recursive=%t/Workspace=%t/%s", recursive, workspaceBase, policy), func(t *testing.T) {
+					root := t.TempDir()
+					dir := filepath.Join(root, "dags")
+					fileDir := dir
+					if recursive {
+						fileDir = filepath.Join(dir, "nested")
+					}
+					require.NoError(t, os.MkdirAll(fileDir, 0750))
+					path := filepath.Join(fileDir, "scheduled.yaml")
+					require.NoError(t, os.WriteFile(path, []byte("labels: [workspace=ops]\nsteps:\n  - run: echo tick\n"), 0600))
+					basePath := filepath.Join(root, "base.yaml")
+					base := fmt.Sprintf("schedule:\n  start: '* * * * *'\n  stop: '0 0 * * *'\n  restart: '0 1 * * *'\ncatchup_window: 1h\noverlap_policy: %s\nqueue: pool\n", policy)
+					require.NoError(t, os.WriteFile(basePath, []byte(base), 0600))
+					opts := []filedag.Option{filedag.WithSkipExamples(true), filedag.WithBaseConfig(basePath), filedag.WithRecursiveDiscovery(recursive)}
+					loadOpts := []spec.LoadOption{spec.WithBaseConfig(basePath), spec.WithoutEval()}
+					if workspaceBase {
+						workspaceDir := filepath.Join(root, "workspaces")
+						require.NoError(t, os.MkdirAll(filepath.Join(workspaceDir, "ops"), 0750))
+						require.NoError(t, os.WriteFile(filepath.Join(workspaceDir, "ops", "base.yaml"), []byte(base), 0600))
+						require.NoError(t, os.WriteFile(basePath, []byte("queue: global\n"), 0600))
+						opts = append(opts, filedag.WithWorkspaceBaseConfigDir(workspaceDir))
+						loadOpts = append(loadOpts, spec.WithWorkspaceBaseConfigDir(workspaceDir))
+					}
+					repo := testutil.NewFileDAGRepository(dir, opts...)
+					reader := filedag.NewFileEntryReader(dir, repo, recursive, basePath, "")
+					require.NoError(t, reader.Init(t.Context()))
+					t.Cleanup(reader.Stop)
+					entries := reader.Entries()
+					require.Len(t, entries, 1)
+					full, err := spec.Load(t.Context(), path, loadOpts...)
+					require.NoError(t, err)
+					metadata := entries[0].DAG
+					require.Equal(t, full.ProcGroup(), metadata.ProcGroup())
+					require.Equal(t, "pool", metadata.ProcGroup())
+					require.Equal(t, full.Schedule, metadata.Schedule)
+					require.Equal(t, full.StopSchedule, metadata.StopSchedule)
+					require.Equal(t, full.RestartSchedule, metadata.RestartSchedule)
+
+					for _, guard := range []string{"running", "queued"} {
+						t.Run(guard, func(t *testing.T) {
+							now := time.Date(2026, 2, 7, 12, 0, 0, 0, time.UTC)
+							busy := true
+							enqueued := make(map[string]int)
+							newPlanner := func(queues bool) *TickPlanner {
+								planner, _ := newTestTickPlanner(&mockStateStore{state: newMockState(now.Add(-3 * time.Minute))})
+								planner.cfg.QueuesEnabled = queues
+								planner.cfg.IsRunning = func(_ context.Context, dag *ir.DAG) (bool, error) {
+									require.Equal(t, full.ProcGroup(), dag.ProcGroup())
+									return busy && guard == "running", nil
+								}
+								planner.cfg.IsQueued = func(_ context.Context, dag *ir.DAG) (bool, error) {
+									require.Equal(t, full.ProcGroup(), dag.ProcGroup())
+									return busy && guard == "queued", nil
+								}
+								planner.cfg.Enqueue = func(_ context.Context, entry DAGEntry, runID string, _ ir.TriggerType, _ time.Time) error {
+									require.Equal(t, full.ProcGroup(), entry.DAG.ProcGroup())
+									enqueued[runID]++
+									return nil
+								}
+
+								require.NoError(t, planner.Init(t.Context(), entries))
+								return planner
+							}
+							planner := newPlanner(true)
+							require.Empty(t, planner.Plan(t.Context(), now))
+							busy = false
+							runs := planner.Plan(t.Context(), now.Add(time.Minute))
+							require.Len(t, runs, 1)
+							require.Equal(t, ir.TriggerTypeCatchUp, runs[0].TriggerType)
+							var want time.Time
+							switch policy {
+							case ir.OverlapPolicyAll:
+								want = now.Add(-2 * time.Minute)
+							case ir.OverlapPolicySkip:
+								want = now.Add(-time.Minute)
+							case ir.OverlapPolicyLatest:
+								want = now
+							}
+							require.True(t, want.Equal(runs[0].ScheduledTime))
+							planner.DispatchRun(t.Context(), runs[0])
+							require.Equal(t, 1, enqueued[runs[0].RunID])
+							disabled := newPlanner(false)
+							runs = disabled.Plan(t.Context(), now)
+							require.Len(t, runs, 1)
+							require.Equal(t, ir.TriggerTypeScheduler, runs[0].TriggerType)
+						})
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestBaseRefreshUpdatesPlanner(t *testing.T) {
+	for _, recursive := range []bool{false, true} {
+		t.Run(fmt.Sprint(recursive), func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, "dags")
+			require.NoError(t, os.MkdirAll(dir, 0750))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "scheduled.yaml"), []byte("name: scheduled\nsteps:\n  - run: echo tick\n"), 0600))
+			base := filepath.Join(root, "base.yaml")
+			require.NoError(t, os.WriteFile(base, []byte("queue: old\nschedule: '0 * * * *'\n"), 0600))
+			repo := testutil.NewFileDAGRepository(dir, filedag.WithBaseConfig(base), filedag.WithRecursiveDiscovery(recursive))
+			reader := filedag.NewFileEntryReader(dir, repo, recursive, base, "")
+			require.NoError(t, reader.Init(t.Context()))
+			t.Cleanup(reader.Stop)
+			planner, _ := newTestTickPlanner(nil)
+			require.NoError(t, planner.Init(t.Context(), reader.Entries()))
+			require.NoError(t, os.WriteFile(base, []byte("queue: updated\nschedule: '*/5 * * * *'\n"), 0600))
+			go reader.Start(t.Context())
+			select {
+			case event := <-reader.Events():
+				require.Equal(t, DAGChangeUpdated, event.Type)
+				planner.handleEvent(t.Context(), event)
+			case <-time.After(3 * time.Second):
+				t.Fatal("base update did not notify the planner")
+			}
+			dag := planner.entries["scheduled"].DAG
+			require.Equal(t, "updated", dag.ProcGroup())
+			require.Equal(t, "*/5 * * * *", dag.Schedule[0].Expression)
 		})
 	}
 }

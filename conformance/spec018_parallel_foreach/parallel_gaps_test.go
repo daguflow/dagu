@@ -41,8 +41,13 @@ func TestParallelAbort(t *testing.T) {
 
 	deadline := time.Now().Add(harness.WaitTimeout(t))
 	for {
-		if _, err := os.Stat(dagu.ProjectPath("started-one.txt")); err == nil {
+		// Redirection creates the file before printf writes the marker.
+		content, err := os.ReadFile(dagu.ProjectPath("started-one.txt"))
+		if err == nil && string(content) == "started\n" {
 			break
+		}
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatalf("reading start marker: %v", err)
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("item one never started: %s", proc.FailureOutput())
@@ -53,8 +58,6 @@ func TestParallelAbort(t *testing.T) {
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
-	dagu.ExpectFileContent("started-one.txt", "started\n")
-
 	stopResult := dagu.RunWithEnv(env, "stop", "--run-id="+runID, "parallel_timeout_abort.yaml")
 	stopResult.ExpectExitCode(0)
 

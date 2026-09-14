@@ -290,6 +290,23 @@ func TestCache_LoadLatest_FileNotFound(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestCache_MtimeRollback(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "base.yaml")
+	cache := NewCache[[]byte]("base", 1, 0)
+	load := func() ([]byte, error) { return os.ReadFile(path) }
+	stamp := time.Unix(1_700_000_000, 0)
+	require.NoError(t, os.WriteFile(path, []byte("queue: old\n"), 0600))
+	require.NoError(t, os.Chtimes(path, stamp, stamp))
+	_, err := cache.LoadLatest(path, load)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, []byte("queue: new\n"), 0600))
+	require.NoError(t, os.Chtimes(path, stamp.Add(-time.Second), stamp.Add(-time.Second)))
+	data, err := cache.LoadLatest(path, load)
+	require.NoError(t, err)
+	require.Equal(t, "queue: new\n", string(data))
+}
+
 func TestCache_LoadLatest_LoaderError(t *testing.T) {
 	t.Parallel()
 

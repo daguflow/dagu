@@ -10,6 +10,9 @@ const defaultBaseConfig = `# Base DAG Configuration
 # =====================
 # Values defined here are inherited by ALL DAGs.
 # Individual DAGs can override any setting.
+# Precedence: global base -> workspace base -> DAG.
+# Set skip_if_successful: false in a DAG to override an inherited true.
+# Changes to global or workspace defaults are reloaded automatically.
 # Environment variables (env:) are additive — DAG env vars append to these.
 #
 # Settings with sensible defaults are enabled below. Uncomment others as needed.
@@ -49,6 +52,7 @@ max_output_size: 1048576  # 1MB (bytes)
 # Lookback window for replaying missed scheduled runs after downtime.
 # On scheduler restart, all missed cron intervals within this window are executed (max 1000).
 # Duration string: e.g. "6h", "24h", "2d12h". Empty = no catchup (missed runs discarded).
+# Set catchup_window: "" in a DAG to disable inherited catchup.
 catchup_window: "6h"
 
 # Retry the entire DAG after a terminal failure. Retries are opt-in because
@@ -93,6 +97,7 @@ catchup_window: "6h"
 # -- Queue --
 # Assign DAGs to a named queue for concurrency control across DAGs.
 # When unset, each DAG uses its own name as the process group (no cross-DAG coordination).
+# Set queue: "" in a DAG to clear an inherited queue and use its own name.
 # queue: default
 
 # -- Environment Variables --

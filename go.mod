@@ -27,7 +27,7 @@ require (
 	github.com/containerd/platforms v1.0.0-rc.5
 	github.com/coreos/go-oidc v2.3.0+incompatible
 	github.com/creack/pty v1.1.24
-	github.com/fsnotify/fsnotify v1.9.0
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/getkin/kin-openapi v0.144.0
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/go-chi/cors v1.2.2

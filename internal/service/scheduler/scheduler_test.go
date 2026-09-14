@@ -65,6 +65,14 @@ func TestNewRequiresDAGRunRepository(t *testing.T) {
 	require.EqualError(t, err, "DAG-run repository is required")
 }
 
+func TestNewRequiresEntryReader(t *testing.T) {
+	_, err := scheduler.New(&config.Config{}, scheduler.Dependencies{
+		DAGRepository:    &persis.DAGRepository{},
+		DAGRunRepository: &persis.DAGRunRepository{},
+	})
+	require.EqualError(t, err, "DAG entry reader is required")
+}
+
 func TestScheduler(t *testing.T) {
 	t.Parallel()
 

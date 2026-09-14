@@ -39,8 +39,10 @@ func TestCronScheduleRunsTwice(t *testing.T) {
 	dagsDir := filepath.Join(tmpDir, "dags")
 	require.NoError(t, os.MkdirAll(dagsDir, 0755))
 
+	// Exercise live cron slots independently of inherited catch-up defaults.
 	dagContent := `name: cron-test
 schedule: "*/1 * * * *"
+catchup_window: ""
 steps:
   - name: test-step
     run: echo "hello"

@@ -5,6 +5,8 @@ package test
 
 import (
 	"context"
+	filedag "github.com/dagucloud/dagu/v2/internal/persis/file/dag"
+	"github.com/dagucloud/dagu/v2/internal/workspace"
 	"path/filepath"
 	"testing"
 	"time"
@@ -76,10 +78,12 @@ func SetupScheduler(t *testing.T, opts ...HelperOption) *Scheduler {
 
 	// Create entry reader
 	coordinatorCli := coordinator.New(helper.ServiceRegistry, CoordinatorClientConfig(helper.Config.Paths.DataDir))
-	em := scheduler.NewFileEntryReader(
+	em := filedag.NewFileEntryReader(
 		helper.Config.Paths.DAGsDir,
 		ds,
 		helper.Config.DAGDiscovery.Recursive,
+		helper.Config.Paths.BaseConfig,
+		workspace.BaseConfigDir(helper.Config.Paths.DAGsDir),
 	)
 
 	// Update helper with scheduler-specific stores
