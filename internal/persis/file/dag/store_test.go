@@ -2449,3 +2449,42 @@ func TestBaseConfigLifecycle(t *testing.T) {
 		})
 	}
 }
+
+func TestMetadataInFlightBaseChange(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	dir := filepath.Join(root, "dags")
+	require.NoError(t, os.MkdirAll(dir, 0750))
+	path := filepath.Join(dir, "scheduled.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("steps:\n  - run: echo tick\n"), 0600))
+	base := filepath.Join(root, "base.yaml")
+	require.NoError(t, os.WriteFile(base, []byte("queue: old\n"), 0600))
+	cache := fileutil.NewCache[*ir.DAG]("in-flight", 2, 0)
+	store := NewStore(dir, WithBaseConfig(base), WithFileCache(cache))
+	old, err := store.GetMetadata(t.Context(), "scheduled")
+	require.NoError(t, err)
+	resolved, err := store.locateDAG(t.Context(), "scheduled")
+	require.NoError(t, err)
+	key := store.metadataCacheKey(resolved, store.refreshBaseConfigState())
+	cache.Invalidate(key)
+	started, release := make(chan struct{}), make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		_, err := cache.LoadLatestByKey(key, path, func() (*ir.DAG, error) {
+			close(started)
+			<-release
+			return old, nil
+		})
+		done <- err
+	}()
+	<-started
+	require.NoError(t, os.WriteFile(base, []byte("queue: updated\n"), 0600))
+	fresh, loadErr := store.GetMetadata(t.Context(), "scheduled")
+	close(release)
+	require.NoError(t, <-done)
+	require.NoError(t, loadErr)
+	require.Equal(t, "updated", fresh.ProcGroup())
+	current, err := store.GetMetadata(t.Context(), "scheduled")
+	require.NoError(t, err)
+	require.Equal(t, "updated", current.ProcGroup())
+}
