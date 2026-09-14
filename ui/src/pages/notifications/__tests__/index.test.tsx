@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Yota Hamada
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -120,21 +120,23 @@ function renderRulesPage(
       ],
     },
   };
-  mocks.useQuery.mockImplementation((path: string) => ({
-    data: queries[path],
-    isLoading: false,
-    mutate: vi.fn((data: object) => {
-      queries[path] = data;
-    }),
-  }));
+  const savedQueries = new Map<string, object>();
+  mocks.useQuery.mockImplementation((path: string, init: object) => {
+    const key = JSON.stringify([path, init]);
+    return {
+      data: savedQueries.get(key) ?? queries[path],
+      isLoading: false,
+      mutate: vi.fn((data: object) => savedQueries.set(key, data)),
+    };
+  });
 
-  render(
+  const page = (workspaceName?: string, remoteNode = 'local') => (
     <MemoryRouter>
       <AppBarContext.Provider
         value={
           {
             setTitle: vi.fn(),
-            selectedRemoteNode: 'local',
+            selectedRemoteNode: remoteNode,
             workspaceSelection: workspaceName
               ? { kind: 'workspace', workspace: workspaceName }
               : { kind: 'all' },
@@ -145,6 +147,11 @@ function renderRulesPage(
       </AppBarContext.Provider>
     </MemoryRouter>
   );
+  const view = render(page(workspaceName));
+  return {
+    changeScope: (workspaceName?: string, remoteNode = 'local') =>
+      view.rerender(page(workspaceName, remoteNode)),
+  };
 }
 
 beforeEach(() => {
@@ -192,6 +199,65 @@ describe('NotificationChannelsPage', () => {
       webhookUrlPreview: 'https://hooks.slack.com/services/***',
     },
   };
+
+  it('keeps a pending channel save on its original remote node', async () => {
+    const user = userEvent.setup();
+    let completeSave!: (response: object) => void;
+    mocks.client.POST.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          completeSave = resolve;
+        })
+    );
+    const settingsQuery = { data: {}, isLoading: false, mutate: vi.fn() };
+    const channelsQuery = {
+      data: { channels: [] },
+      isLoading: false,
+      mutate: vi.fn(),
+    };
+    mocks.useQuery.mockImplementation((path: string) =>
+      path === '/notification-settings' ? settingsQuery : channelsQuery
+    );
+    const page = (remoteNode: string) => (
+      <MemoryRouter>
+        <AppBarContext.Provider
+          value={{ setTitle: vi.fn(), selectedRemoteNode: remoteNode } as never}
+        >
+          <NotificationChannelsPage />
+        </AppBarContext.Provider>
+      </MemoryRouter>
+    );
+    const view = render(page('local'));
+    await user.click(screen.getByRole('button', { name: 'Add channel' }));
+    const editor = screen.getByRole('dialog');
+    await user.type(
+      within(editor).getByLabelText('Channel name'),
+      'Local alerts'
+    );
+    await user.type(
+      within(editor).getByLabelText('Slack webhook URL'),
+      'https://hooks.slack.com/services/test'
+    );
+    await user.click(
+      within(editor).getByRole('button', { name: 'Create channel' })
+    );
+    expect(mocks.client.POST).toHaveBeenCalledWith(
+      '/notification-channels',
+      expect.objectContaining({
+        params: { query: { remoteNode: 'local' } },
+      })
+    );
+
+    view.rerender(page('remote'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await act(async () => {
+      completeSave({ data: { ...slackChannel, name: 'Local alerts' } });
+    });
+    expect(
+      screen.queryByRole('listitem', { name: 'Local alerts' })
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add channel' })).toBeEnabled();
+  });
 
   it('searches saved channels by name and provider', async () => {
     const user = userEvent.setup();
@@ -512,6 +578,51 @@ describe('NotificationChannelsPage', () => {
 });
 
 describe('NotificationRulesPage', () => {
+  it.each(['remote node', 'workspace'])(
+    'keeps pending rule saves on their original %s',
+    async (scope) => {
+      const user = userEvent.setup();
+      let completeSave!: () => void;
+      mocks.client.PUT.mockImplementationOnce(
+        (_path: string, { body }: { body: object }) =>
+          new Promise((resolve) => {
+            completeSave = () => resolve({ data: body });
+          })
+      );
+      const { changeScope } = renderRulesPage(
+        [],
+        [NotificationEventType.dag_run_failed],
+        'ops'
+      );
+      if (scope === 'workspace') {
+        await user.click(screen.getByLabelText('Applies to'));
+        await user.click(screen.getByRole('option', { name: 'ops workspace' }));
+        await user.click(
+          screen.getByRole('button', { name: 'Configure workspace' })
+        );
+      }
+      await user.click(screen.getByRole('checkbox', { name: 'Succeeded' }));
+      await user.click(screen.getByRole('button', { name: 'Save changes' }));
+      changeScope(
+        scope === 'workspace' ? 'other' : 'ops',
+        scope === 'remote node' ? 'remote' : 'local'
+      );
+      await act(async () => {
+        completeSave();
+      });
+      if (scope === 'workspace') {
+        await user.click(screen.getByLabelText('Applies to'));
+        await user.click(
+          screen.getByRole('option', { name: 'other workspace' })
+        );
+      }
+      expect(screen.getByRole('checkbox', { name: 'Failed' })).toBeChecked();
+      expect(
+        screen.getByRole('checkbox', { name: 'Succeeded' })
+      ).not.toBeChecked();
+    }
+  );
+
   it('loads operational defaults for saved routes without events', () => {
     renderRulesPage([], []);
 

@@ -977,6 +977,16 @@ function apiErrorMessage(error: unknown, fallback: string): string | null {
 }
 
 export function NotificationRulesPage() {
+  const { selectedRemoteNode, workspaceSelection } = useContext(AppBarContext);
+  const scopeKey = JSON.stringify([
+    selectedRemoteNode || 'local',
+    workspaceSelection?.kind,
+    workspaceNameForSelection(workspaceSelection),
+  ]);
+  return <NotificationRulesContent key={scopeKey} />;
+}
+
+function NotificationRulesContent() {
   const { ts } = useI18n();
   const client = useClient();
   const appBarContext = useContext(AppBarContext);
@@ -1133,7 +1143,9 @@ export function NotificationRulesPage() {
   };
 
   const saveWorkspaceRoutes = async () => {
-    if (!canConfigureWorkspaceRoutes) return;
+    if (!canConfigureWorkspaceRoutes) {
+      return;
+    }
     setIsSavingWorkspaceRoutes(true);
     setError(null);
     setNotice(null);
@@ -1478,10 +1490,15 @@ export function NotificationRulesPage() {
 }
 
 export function NotificationChannelsPage() {
+  const { selectedRemoteNode } = useContext(AppBarContext);
+  const remoteNode = selectedRemoteNode || 'local';
+  return <NotificationChannelsContent key={remoteNode} remoteNode={remoteNode} />;
+}
+
+function NotificationChannelsContent({ remoteNode }: { remoteNode: string }) {
   const client = useClient();
   const { ts } = useI18n();
   const appBarContext = useContext(AppBarContext);
-  const remoteNode = appBarContext.selectedRemoteNode || 'local';
   const [smtpDraft, setSMTPDraft] = useState<SMTPDraft>(blankSMTPDraft);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [channels, setChannels] = useState<DraftChannel[]>([]);
@@ -1548,12 +1565,6 @@ export function NotificationChannelsPage() {
       setChannels((channelsData.channels || []).map(draftChannelFromAPI));
     }
   }, [channelsData]);
-
-  useEffect(() => {
-    setSettingsOpen(false);
-    setSettingsError(null);
-    setNotice(null);
-  }, [remoteNode]);
 
   if (loadError && !isLoading) {
     return <StatusCard error={loadError} notice={null} />;
@@ -1662,7 +1673,6 @@ export function NotificationChannelsPage() {
       {!isLoading && (
         <>
           <NotificationChannelsSection
-            key={remoteNode}
             channels={channels}
             onSave={saveChannel}
             onDelete={deleteChannel}
