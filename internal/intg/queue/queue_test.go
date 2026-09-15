@@ -587,7 +587,7 @@ func TestQueuedRetryRunsFailedStepAgain(t *testing.T) {
 	work := test.ForOS(
 		fmt.Sprintf("printf 'x' >> %s; [ -f %s ] && exit 0; exit 7",
 			test.PosixQuote(attempts), test.PosixQuote(gate)),
-		fmt.Sprintf("Add-Content -Path %s -Value 'x'; if (Test-Path %s) { exit 0 }; exit 7",
+		fmt.Sprintf("Add-Content -Path %s -Value 'x' -NoNewline; if (Test-Path %s) { exit 0 }; exit 7",
 			test.PowerShellQuote(attempts), test.PowerShellQuote(gate)),
 	)
 	f := newFixture(t, fmt.Sprintf(`
