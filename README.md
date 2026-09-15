@@ -749,6 +749,8 @@ SMTP inherited from global or workspace `base.yaml` is omitted from new run
 snapshots (`dag.json`). Retries, restarts, and queued runs use the current base
 SMTP configuration. Removing it disables email notifications unless the original
 DAG defines SMTP. Other base settings and the original DAG YAML remain captured.
+Runs without captured base configuration use the current base configuration in
+full; an explicitly empty captured configuration only reloads SMTP.
 
 SMTP written directly in DAG YAML, values stored in `env`, distributed task
 payloads, and workspace bundles are still retained. Existing history files and

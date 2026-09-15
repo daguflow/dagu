@@ -42,6 +42,7 @@ func PrepareDAGSnapshot(dag *ir.DAG) (*ir.DAG, error) {
 
 // RefreshBaseSMTP returns a copy with inherited SMTP from the current base
 // configuration. Other saved settings and authored YAML remain unchanged.
+// If no base configuration was captured, the current base settings are used.
 // Rebuilding the returned DAG applies its original SMTP overrides.
 func RefreshBaseSMTP(dag *ir.DAG, opts ...LoadOption) (*ir.DAG, error) {
 	options := newBuildOpts(opts...)
@@ -81,11 +82,17 @@ func refreshBaseSMTP(dag *ir.DAG, opts buildOpts, base *baseConfigSource, inheri
 		if source.err != nil {
 			return nil, fmt.Errorf("decode current base config: %w", source.err)
 		}
-		if smtp, ok := source.values["smtp"]; ok {
-			current, err = mergeDefinitionMaps(current, map[string]any{"smtp": smtp})
-			if err != nil {
-				return nil, err
+		values := source.values
+		if len(dag.BaseConfigData) > 0 {
+			smtp, ok := values["smtp"]
+			if !ok {
+				continue
 			}
+			values = map[string]any{"smtp": smtp}
+		}
+		current, err = mergeDefinitionMaps(current, values)
+		if err != nil {
+			return nil, err
 		}
 	}
 	saved := parseBaseConfig(dag.BaseConfigData)

@@ -34,6 +34,14 @@ func TestRefreshBaseSMTP(t *testing.T) {
 	require.NoError(t, err)
 	snapshot, err := spec.PrepareDAGSnapshot(dag)
 	require.NoError(t, err)
+	t.Run("NoBasePath", func(t *testing.T) {
+		current, err := spec.RefreshBaseSMTP(dag)
+		require.NoError(t, err)
+		current, err = spec.RebuildFromYAML(ctx, current)
+		require.NoError(t, err)
+		assert.Nil(t, current.SMTP)
+		assert.Contains(t, current.Env, "ORIGINAL=original")
+	})
 	require.NoError(t, os.WriteFile(basePath, []byte("smtp:\n  host: global.example\n  password: global-secret\nenv:\n  ORIGINAL: changed\n"), 0600))
 	require.NoError(t, os.WriteFile(workspacePath, []byte("smtp:\n  host: workspace.example\n"), 0600))
 

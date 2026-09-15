@@ -5,6 +5,8 @@ package scheduler_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -133,6 +135,54 @@ steps:
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to dispatch task")
 	})
+}
+
+func TestDAGExecutorBaseConfig(t *testing.T) {
+	t.Parallel()
+	for _, embedded := range []bool{false, true} {
+		for _, smtp := range []bool{false, true} {
+			name := "absent"
+			if embedded {
+				name = "empty"
+			}
+			if smtp {
+				name += "-smtp"
+			}
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				ctx := context.Background()
+				basePath := filepath.Join(t.TempDir(), "base.yaml")
+				base := "env:\n  BASE_SETTING: retained\n"
+				if smtp {
+					base += "smtp:\n  host: current.example\n"
+				}
+				require.NoError(t, os.WriteFile(basePath, []byte(base), 0600))
+				dag, err := spec.LoadYAML(ctx, []byte("name: queued\nsteps:\n  - run: echo ok\n"))
+				require.NoError(t, err)
+				if embedded {
+					dag.BaseConfigData = []byte("{}")
+				}
+				dispatcher := &capturingDispatcher{}
+				executor := scheduler.NewDAGExecutor(dispatcher, nil, config.ExecutionModeDistributed, basePath)
+				require.NoError(t, executor.ExecuteDAG(ctx, dag, dispatch.DispatchOperationRetry,
+					"queued-run", &ir.DAGRunStatus{Status: ir.Queued}, ir.TriggerTypeManual, ""))
+				workerDAG, err := spec.LoadYAML(ctx, dag.YamlData,
+					spec.WithBaseConfigContent([]byte(dispatcher.req.Task.BaseConfig)))
+				require.NoError(t, err)
+				if embedded {
+					require.Empty(t, workerDAG.Env)
+				} else {
+					require.Contains(t, workerDAG.Env, "BASE_SETTING=retained")
+				}
+				if smtp {
+					require.NotNil(t, workerDAG.SMTP)
+					require.Equal(t, "current.example", workerDAG.SMTP.Host)
+				} else {
+					require.Nil(t, workerDAG.SMTP)
+				}
+			})
+		}
+	}
 }
 
 func TestDAGExecutor_DistributedRetryUsesPreviousStatusParamsList(t *testing.T) {
