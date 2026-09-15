@@ -497,7 +497,10 @@ func (h *remoteTaskHandler) loadDAG(ctx context.Context, task *coordinatorv1.Tas
 		return nil, fmt.Errorf("failed to load DAG from %s: %w", tempFile, err)
 	}
 	dag.SourceFile = task.SourceFile
-	dag.BaseConfigWorkspace = task.BaseConfigWorkspace
+	// An unlabeled legacy child still needs its parent's provenance; named workspaces are already known.
+	if task.BaseConfigWorkspace != nil || (dag.BaseConfigWorkspace != nil && *dag.BaseConfigWorkspace == "") {
+		dag.BaseConfigWorkspace = task.BaseConfigWorkspace
+	}
 
 	return &loadedTaskDAG{dag: dag, cleanup: cleanupFunc}, nil
 }
@@ -545,7 +548,9 @@ func (h *remoteTaskHandler) loadWorkspaceDAG(ctx context.Context, task *coordina
 		dag.Name = task.Target
 	}
 	dag.SourceFile = task.SourceFile
-	dag.BaseConfigWorkspace = task.BaseConfigWorkspace
+	if task.BaseConfigWorkspace != nil || (dag.BaseConfigWorkspace != nil && *dag.BaseConfigWorkspace == "") {
+		dag.BaseConfigWorkspace = task.BaseConfigWorkspace
+	}
 
 	logger.Info(ctx, "Materialized task workspace",
 		tag.Target(task.Target),

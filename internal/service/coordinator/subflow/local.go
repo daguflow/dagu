@@ -634,10 +634,9 @@ func loadInProcessDAG(
 		dag.WorkingDir = req.DAG.WorkingDir
 	}
 	dag.SourceFile = req.DAG.SourceFile
-	if len(req.DAG.BaseConfigData) > 0 {
-		dag.BaseConfigWorkspace = req.DAG.BaseConfigWorkspace
-	} else if len(req.DAG.BaseConfigData) == 0 && req.ParentDAG != nil {
-		dag.BaseConfigWorkspace = req.ParentDAG.BaseConfigWorkspace
+	if baseWorkspace := subWorkflowBaseWorkspace(req); baseWorkspace != nil ||
+		(dag.BaseConfigWorkspace != nil && *dag.BaseConfigWorkspace == "") {
+		dag.BaseConfigWorkspace = baseWorkspace
 	}
 	return dag, workspaceDir, cleanup, nil
 }

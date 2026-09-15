@@ -70,7 +70,7 @@ func ResolveRuntimeParams(ctx context.Context, dag *ir.DAG, params any, opts Res
 		return nil, err
 	}
 	resolved.SourceFile = dag.SourceFile
-	if len(dag.BaseConfigData) > 0 && dag.BaseConfigWorkspace != nil {
+	if dag.BaseConfigWorkspace != nil {
 		resolved.BaseConfigWorkspace = dag.BaseConfigWorkspace
 	}
 	return resolved, nil

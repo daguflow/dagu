@@ -1700,6 +1700,7 @@ func TestLoadDAGSelectsInlineTargetFromWorkspace(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "input.txt"), []byte("input"), 0o600))
 	definition := []byte(`name: root
+labels: [workspace=ops]
 steps:
   - name: root-step
     run: echo root
@@ -1737,6 +1738,15 @@ steps:
 	require.NotNil(t, loaded.workspaceSeed)
 	require.Len(t, loaded.dag.Steps, 1)
 	assert.Equal(t, "child-step", loaded.dag.Steps[0].Name)
+	baseDir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(baseDir, "ops"), 0750))
+	require.NoError(t, os.WriteFile(filepath.Join(baseDir, "ops", "base.yaml"), []byte("smtp:\n  host: ops.example\n"), 0600))
+	child, err := spec.RefreshBaseSMTP(loaded.dag, spec.WithWorkspaceBaseConfigDir(baseDir))
+	require.NoError(t, err)
+	child, err = spec.RebuildFromYAML(context.Background(), child)
+	require.NoError(t, err)
+	require.NotNil(t, child.SMTP)
+	assert.Equal(t, "ops.example", child.SMTP.Host)
 }
 
 func TestLoadDAG_CleanupErrorLogged(t *testing.T) {
