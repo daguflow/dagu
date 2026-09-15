@@ -5122,12 +5122,9 @@ func (a *API) refreshBaseSMTP(ctx context.Context, dag *ir.DAG, status *ir.DAGRu
 		if err != nil {
 			return nil, err
 		}
-		parent, err = a.refreshBaseSMTP(ctx, parent, parentStatus)
-		if err != nil {
-			return nil, err
-		}
-		parent.LocalDAGs = map[string]*ir.DAG{dag.Name: dag}
-		parent, err = a.refreshBaseSMTP(ctx, parent, parentStatus)
+		parentCopy := *parent
+		parentCopy.LocalDAGs = map[string]*ir.DAG{dag.Name: dag}
+		parent, err = a.refreshBaseSMTP(ctx, &parentCopy, parentStatus)
 		if err != nil {
 			return nil, err
 		}

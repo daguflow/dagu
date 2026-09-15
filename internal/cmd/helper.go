@@ -83,15 +83,11 @@ func parseScheduleTimeParam(ctx *Context) (string, error) {
 // restoreDAGFromStatus restores a DAG from a previous run's status and YAML.
 // It restores params from the status, loads dotenv, and rebuilds fields excluded
 // from JSON serialization (env, params JSON, registryAuths, etc.).
-func restoreDAGFromStatus(ctx context.Context, dag *ir.DAG, status *ir.DAGRunStatus, repositories ...*persis.DAGRunRepository) (*ir.DAG, error) {
+func restoreDAGFromStatus(ctx context.Context, dag *ir.DAG, status *ir.DAGRunStatus, repository *persis.DAGRunRepository) (*ir.DAG, error) {
 	cfg := config.GetConfig(ctx)
 	opts := []spec.LoadOption{spec.WithBaseConfig(cfg.Paths.BaseConfig)}
 	if cfg.Paths.DAGsDir != "" {
 		opts = append(opts, spec.WithWorkspaceBaseConfigDir(workspace.BaseConfigDir(cfg.Paths.DAGsDir)))
-	}
-	var repository *persis.DAGRunRepository
-	if len(repositories) > 0 {
-		repository = repositories[0]
 	}
 	dag, err := refreshRunBaseSMTP(ctx, dag, status, repository, opts)
 	if err != nil {
@@ -136,13 +132,10 @@ func refreshRunBaseSMTP(ctx context.Context, dag *ir.DAG, status *ir.DAGRunStatu
 		if err != nil {
 			return nil, err
 		}
-		parent, err = refreshRunBaseSMTP(ctx, parent, parentStatus, repository, opts)
-		if err != nil {
-			return nil, err
-		}
 		// Legacy child snapshots may omit the workspace inherited from their file.
-		parent.LocalDAGs = map[string]*ir.DAG{dag.Name: dag}
-		parent, err = spec.RefreshBaseSMTP(parent, opts...)
+		parentCopy := *parent
+		parentCopy.LocalDAGs = map[string]*ir.DAG{dag.Name: dag}
+		parent, err = refreshRunBaseSMTP(ctx, &parentCopy, parentStatus, repository, opts)
 		if err != nil {
 			return nil, err
 		}

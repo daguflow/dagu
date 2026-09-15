@@ -1503,7 +1503,7 @@ func (a *API) dispatchStartToCoordinator(ctx context.Context, dag *ir.DAG, opts 
 	if opts.triggerActor != "" {
 		taskOpts = append(taskOpts, executor.WithTriggerActor(opts.triggerActor))
 	}
-	taskOpts = append(taskOpts, executor.WithBaseConfig(executor.ResolveBaseConfig(dag.BaseConfigData, a.config.Paths.BaseConfig)))
+	taskOpts = append(taskOpts, executor.WithBaseConfig(executor.ResolveBaseConfig(dag.BaseConfigData, a.config.Paths.BaseConfig), dag.BaseConfigWorkspace))
 	if dag.SourceFile != "" {
 		taskOpts = append(taskOpts, executor.WithSourceFile(dag.SourceFile))
 	}

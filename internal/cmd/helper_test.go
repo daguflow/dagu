@@ -64,7 +64,7 @@ func TestRestoreDAGFromStatus_SMTP(t *testing.T) {
 				YamlData:       []byte("smtp:\n  username: ${SMTP_USER}\nenv:\n  SMTP_USER: original-user\nsteps:\n  - run: echo original\n"),
 				BaseConfigData: []byte("smtp:\n  host: old.example\n  password: old-password\nenv:\n  ORIGINAL_BASE: original\n"),
 			}
-			restored, err := restoreDAGFromStatus(ctx, dag, &ir.DAGRunStatus{})
+			restored, err := restoreDAGFromStatus(ctx, dag, &ir.DAGRunStatus{}, nil)
 			require.NoError(t, err)
 			require.NotNil(t, restored.SMTP)
 			assert.Equal(t, "${SMTP_USER}", restored.SMTP.Username)
@@ -187,7 +187,7 @@ func TestRestoreDAGFromStatus_ParamsWithSpaces(t *testing.T) {
 		ParamsList: []string{"topic=hello world"},
 	}
 
-	result, err := restoreDAGFromStatus(context.Background(), dag, status)
+	result, err := restoreDAGFromStatus(context.Background(), dag, status, nil)
 	require.NoError(t, err)
 
 	// The restored params should preserve "hello world" as a single value
@@ -210,7 +210,7 @@ func TestRestoreDAGFromStatus_PositionalParamsRemainOverrides(t *testing.T) {
 		ParamsList: []string{"1=override"},
 	}
 
-	result, err := restoreDAGFromStatus(context.Background(), dag, status)
+	result, err := restoreDAGFromStatus(context.Background(), dag, status, nil)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1=override"}, result.Params)
 }
@@ -231,7 +231,7 @@ steps:
 	}
 	status := &ir.DAGRunStatus{}
 
-	result, err := restoreDAGFromStatus(context.Background(), dag, status)
+	result, err := restoreDAGFromStatus(context.Background(), dag, status, nil)
 	require.NoError(t, err)
 	assert.Equal(t, workDir, result.WorkingDir)
 	assert.True(t, result.WorkingDirExplicit)
@@ -253,7 +253,7 @@ steps:
 	}
 	status := &ir.DAGRunStatus{}
 
-	result, err := restoreDAGFromStatus(context.Background(), dag, status)
+	result, err := restoreDAGFromStatus(context.Background(), dag, status, nil)
 	require.NoError(t, err)
 	assert.Equal(t, workDir, result.WorkingDir)
 	assert.True(t, result.WorkingDirExplicit)
@@ -275,7 +275,7 @@ steps:
 	}
 	status := &ir.DAGRunStatus{WorkingDir: persistedWorkDir}
 
-	result, err := restoreDAGFromStatus(context.Background(), dag, status)
+	result, err := restoreDAGFromStatus(context.Background(), dag, status, nil)
 	require.NoError(t, err)
 	assert.Equal(t, persistedWorkDir, result.WorkingDir)
 	assert.True(t, result.WorkingDirExplicit)
@@ -296,7 +296,7 @@ steps:
 	}
 	status := &ir.DAGRunStatus{}
 
-	result, err := restoreDAGFromStatus(context.Background(), dag, status)
+	result, err := restoreDAGFromStatus(context.Background(), dag, status, nil)
 	require.NoError(t, err)
 	require.Contains(t, result.RegistryAuths, "registry.example.com")
 	require.Equal(t, "${REGISTRY_USER}", result.RegistryAuths["registry.example.com"].Username)
@@ -320,7 +320,7 @@ registry_auths:
 	}
 	status := &ir.DAGRunStatus{}
 
-	result, err := restoreDAGFromStatus(context.Background(), dag, status)
+	result, err := restoreDAGFromStatus(context.Background(), dag, status, nil)
 	require.NoError(t, err)
 	require.Contains(t, result.RegistryAuths, "registry.example.com")
 	require.Equal(t, "${REGISTRY_USER}", result.RegistryAuths["registry.example.com"].Username)
@@ -345,7 +345,7 @@ harness:
 	}
 	status := &ir.DAGRunStatus{}
 
-	result, err := restoreDAGFromStatus(context.Background(), dag, status)
+	result, err := restoreDAGFromStatus(context.Background(), dag, status, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result.Harness)
 	assert.Equal(t, "passthrough", result.Harness.Config["provider"])
