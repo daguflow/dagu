@@ -102,6 +102,7 @@ var (
 	ErrInvalidSortField      = errors.New("view: invalid sort field")
 	ErrInvalidSortOrder      = errors.New("view: invalid sort order")
 	ErrDAGRunIDTooLong       = errors.New("view: dagRunId too long")
+	ErrInvalidRunStatus      = errors.New("view: invalid run status")
 	ErrRunStatusTooLong      = errors.New("view: runStatus too long")
 	ErrInvalidDateMode       = errors.New("view: invalid date mode")
 	ErrInvalidDatePreset     = errors.New("view: invalid date preset")
@@ -255,6 +256,8 @@ func (v *View) Validate() error {
 			return ErrDAGRunIDTooLong
 		case len([]rune(v.RunStatus)) > MaxRunStatusLength:
 			return ErrRunStatusTooLong
+		case !ValidRunStatus(v.RunStatus):
+			return ErrInvalidRunStatus
 		case !ValidRunDateMode(v.DateMode):
 			return ErrInvalidDateMode
 		case !ValidRunDatePreset(v.DatePreset):
@@ -311,6 +314,23 @@ func ValidType(t string) bool {
 	default:
 		return false
 	}
+}
+
+// ValidRunStatus reports whether status is a supported run status: the
+// wildcard "all" or a numeric status code.
+func ValidRunStatus(status string) bool {
+	if status == RunStatusAll {
+		return true
+	}
+	if status == "" || len(status) > 9 {
+		return false
+	}
+	for _, r := range status {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // ValidRunDateMode reports whether mode is a supported Executions page date

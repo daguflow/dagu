@@ -78,7 +78,7 @@ const VIEW_COPY: Record<
     allItems: 'All runs',
     saveTitle: 'Save run view',
     saveDescription:
-      'Save the current name, status, label, and date filters for this remote and workspace.',
+      'Save the current name, run ID, status, label, and date filters for this remote and workspace.',
     manageTitle: 'Manage run views',
     manageDescription:
       'Star shared sidebar shortcuts, choose the shared default, or remove views saved for this remote and workspace.',

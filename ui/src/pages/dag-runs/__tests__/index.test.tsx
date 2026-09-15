@@ -510,6 +510,9 @@ describe('DAGRuns page', () => {
     await waitFor(() => {
       expect(locationSearchParams().get('view')).toBe('nightly-view');
     });
+    // Preset and specific views keep relative date params and derive the
+    // concrete range when applied; only custom ranges persist dates.
+    expect(locationSearchParams().has('fromDate')).toBe(false);
   });
 
   it('marks a run view as edited when its filters change and resets via the menu', async () => {

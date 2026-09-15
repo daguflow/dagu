@@ -101,6 +101,7 @@ func TestView_ValidateRunRejectsInvalidFields(t *testing.T) {
 		{"all scope with workspace", func(v *view.View) { v.Workspace = "production" }, view.ErrInvalidWorkspaceScope},
 		{"workspace scope without workspace", func(v *view.View) { v.WorkspaceScope = view.WorkspaceScopeWorkspace }, view.ErrInvalidWorkspaceScope},
 		{"dagRunId too long", func(v *view.View) { v.DAGRunID = strings.Repeat("r", view.MaxDAGRunIDLength+1) }, view.ErrDAGRunIDTooLong},
+		{"runStatus not a status", func(v *view.View) { v.RunStatus = "failed" }, view.ErrInvalidRunStatus},
 		{"runStatus too long", func(v *view.View) { v.RunStatus = strings.Repeat("s", view.MaxRunStatusLength+1) }, view.ErrRunStatusTooLong},
 		{"unknown date mode", func(v *view.View) { v.DateMode = "week" }, view.ErrInvalidDateMode},
 		{"unknown date preset", func(v *view.View) { v.DatePreset = "tomorrow" }, view.ErrInvalidDatePreset},

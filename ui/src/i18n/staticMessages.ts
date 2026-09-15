@@ -1341,8 +1341,8 @@ const english = {
   'Save Source DAG:': 'Save Source DAG:',
   'Save the current name and label filters, plus the sort order, for this remote and workspace.':
     'Save the current name and label filters, plus the sort order, for this remote and workspace.',
-  'Save the current name, status, label, and date filters for this remote and workspace.':
-    'Save the current name, status, label, and date filters for this remote and workspace.',
+  'Save the current name, run ID, status, label, and date filters for this remote and workspace.':
+    'Save the current name, run ID, status, label, and date filters for this remote and workspace.',
   'Save view': 'Save view',
   'Save run view': 'Save run view',
   'Save workflow view': 'Save workflow view',
@@ -3537,8 +3537,8 @@ const chinese = {
   'Save Source DAG:': '保存源 DAG：',
   'Save the current name and label filters, plus the sort order, for this remote and workspace.':
     '保存此远程和工作区的当前名称和标签筛选条件以及排序顺序。',
-  'Save the current name, status, label, and date filters for this remote and workspace.':
-    '保存此远程和工作区的当前名称、状态、标签和日期筛筛选条件。',
+  'Save the current name, run ID, status, label, and date filters for this remote and workspace.':
+    '保存此远程和工作区的当前名称、运行 ID、状态、标签和日期筛选条件。',
   'Save view': '保存视图',
   'Save run view': '保存运行视图',
   'Save workflow view': '保存工作流视图',
@@ -5748,8 +5748,8 @@ const japanese = {
   'Save Source DAG:': 'ソース DAG を保存：',
   'Save the current name and label filters, plus the sort order, for this remote and workspace.':
     'このリモートとワークスペースの現在の名前とラベルのフィルター、および並べ替え順序を保存します。',
-  'Save the current name, status, label, and date filters for this remote and workspace.':
-    'このリモートとワークスペースの現在の名前、ステータス、ラベル、日付のフィルターを保存します。',
+  'Save the current name, run ID, status, label, and date filters for this remote and workspace.':
+    'このリモートとワークスペースの現在の名前、ランID、ステータス、ラベル、日付のフィルターを保存します。',
   'Save view': 'ビューを保存',
   'Save run view': 'ランビューを保存',
   'Save workflow view': 'ワークフロービューを保存',

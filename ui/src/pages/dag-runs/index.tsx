@@ -571,16 +571,6 @@ function DAGRuns() {
       hasUrlFilters = true;
     }
 
-    if (params.has('fromDate')) {
-      urlFilters.fromDate = parseDateFromUrl(params.get('fromDate'));
-      hasUrlFilters = true;
-    }
-
-    if (params.has('toDate')) {
-      urlFilters.toDate = parseDateFromUrl(params.get('toDate'));
-      hasUrlFilters = true;
-    }
-
     const dateModeParam = params.get('dateMode');
     if (
       dateModeParam === 'preset' ||
@@ -588,6 +578,18 @@ function DAGRuns() {
       dateModeParam === 'custom'
     ) {
       urlFilters.dateRangeMode = dateModeParam;
+      hasUrlFilters = true;
+    }
+
+    // Concrete dates are only meaningful for a custom range; preset and
+    // specific modes keep their relative parameters and derive dates fresh.
+    if (params.has('fromDate') && dateModeParam === 'custom') {
+      urlFilters.fromDate = parseDateFromUrl(params.get('fromDate'));
+      hasUrlFilters = true;
+    }
+
+    if (params.has('toDate') && dateModeParam === 'custom') {
+      urlFilters.toDate = parseDateFromUrl(params.get('toDate'));
       hasUrlFilters = true;
     }
 
@@ -843,18 +845,21 @@ function DAGRuns() {
       if (filters.labels.length > 0) {
         params.set('labels', filters.labels.join(','));
       }
-      if (filters.fromDate) {
-        params.set('fromDate', filters.fromDate);
-      }
-      if (filters.toDate) {
-        params.set('toDate', filters.toDate);
-      }
       params.set('dateMode', filters.dateRangeMode);
       if (filters.dateRangeMode === 'preset') {
         params.set('preset', filters.datePreset);
       } else if (filters.dateRangeMode === 'specific') {
         params.set('specificValue', filters.specificValue);
         params.set('specificPeriod', filters.specificPeriod);
+      } else {
+        // Only a custom range persists concrete dates; preset and specific
+        // modes derive them whenever the view is applied.
+        if (filters.fromDate) {
+          params.set('fromDate', filters.fromDate);
+        }
+        if (filters.toDate) {
+          params.set('toDate', filters.toDate);
+        }
       }
       const search = params.toString();
       navigate(
