@@ -76,6 +76,9 @@ type EnqueueFunc func(ctx context.Context, entry DAGEntry, runID string, trigger
 // IsQueuedFunc checks if a DAG has any pending queued items.
 type IsQueuedFunc func(ctx context.Context, dag *ir.DAG) (bool, error)
 
+// HasGlobalQueueFunc reports whether a DAG names a configured queue.
+type HasGlobalQueueFunc func(dag *ir.DAG) bool
+
 // RunExistsFunc checks whether a durable dag-run record already exists.
 type RunExistsFunc func(ctx context.Context, dag *ir.DAG, runID string) (bool, error)
 
@@ -101,6 +104,9 @@ type TickPlannerConfig struct {
 	Enqueue EnqueueFunc
 	// IsQueued checks if a DAG has any pending queued items.
 	IsQueued IsQueuedFunc
+	// HasGlobalQueue reports a DAG whose queue is configured. Its scheduled
+	// runs wait for queue capacity instead of starting as the schedule fires.
+	HasGlobalQueue HasGlobalQueueFunc
 	// RunExists checks whether a durable dag-run record already exists.
 	RunExists RunExistsFunc
 }
@@ -1543,6 +1549,16 @@ func (tp *TickPlanner) recomputeBuffer(ctx context.Context, entry DAGEntry, acti
 	return watermarkAdvanced
 }
 
+// queuesRun reports a scheduled run the queue admits rather than one the
+// scheduler starts as its schedule fires, so the queue's capacity paces every
+// run of the DAGs that share it.
+func (tp *TickPlanner) queuesRun(dag *ir.DAG) bool {
+	return tp.cfg.QueuesEnabled &&
+		tp.cfg.Enqueue != nil &&
+		tp.cfg.HasGlobalQueue != nil &&
+		tp.cfg.HasGlobalQueue(dag)
+}
+
 // DispatchRun dispatches a PlannedRun using the configured dispatch functions.
 func (tp *TickPlanner) DispatchRun(ctx context.Context, run PlannedRun) {
 	logger.Info(ctx, "Dispatching planned run",
@@ -1630,6 +1646,8 @@ func (tp *TickPlanner) DispatchRun(ctx context.Context, run PlannedRun) {
 				tp.advanceDAGWatermark(run.DAG.Name, run.ScheduledTime)
 				return
 			}
+			err = tp.cfg.Enqueue(ctx, run.DAGEntry, run.RunID, run.TriggerType, run.ScheduledTime)
+		} else if tp.queuesRun(run.DAG) {
 			err = tp.cfg.Enqueue(ctx, run.DAGEntry, run.RunID, run.TriggerType, run.ScheduledTime)
 		} else {
 			err = tp.cfg.Dispatch(ctx, run.DAGEntry, run.RunID, run.TriggerType, run.ScheduledTime)
