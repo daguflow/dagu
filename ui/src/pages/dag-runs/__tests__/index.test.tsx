@@ -507,7 +507,9 @@ describe('DAGRuns page', () => {
         })
       );
     });
-    expect(locationSearchParams().get('view')).toBe('nightly-view');
+    await waitFor(() => {
+      expect(locationSearchParams().get('view')).toBe('nightly-view');
+    });
   });
 
   it('marks a run view as edited when its filters change and resets via the menu', async () => {
