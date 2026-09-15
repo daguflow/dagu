@@ -50,7 +50,7 @@ steps:
 			} else {
 				require.NoError(t, f.start())
 			}
-			awaitSMTP(t, firstMail)
+			awaitSMTP(t, f, firstMail)
 			status := f.waitForStatus(ir.Failed, 20*time.Second)
 			f.waitForRunReleasedFromWorkers(status.DAGRunID, 10*time.Second)
 			attempt, err := f.coord.DAGRunRepository.FindAttempt(f.coord.Context, status.DAGRun())
@@ -67,7 +67,7 @@ steps:
 				require.NoError(t, executor.ExecuteDAG(f.coord.Context, snapshot, dispatch.DispatchOperationRetry,
 					status.DAGRunID, &status, ir.TriggerTypeRetry, ""))
 			}
-			awaitSMTP(t, retryMail)
+			awaitSMTP(t, f, retryMail)
 			f.h.Wait.EventuallyEveryWithin("retry finishes in a new attempt", distrTestTimeout(20*time.Second), 50*time.Millisecond, func() bool {
 				latest, err := f.latestStatus()
 				return err == nil && latest.Status == ir.Failed && latest.AttemptID != status.AttemptID
@@ -76,24 +76,34 @@ steps:
 	}
 }
 
-func awaitSMTP(t *testing.T, messages <-chan string) {
+type smtpInbox struct {
+	messages    <-chan string
+	acknowledge chan struct{}
+}
+
+func awaitSMTP(t *testing.T, f *testFixture, inbox smtpInbox) {
 	t.Helper()
+	defer close(inbox.acknowledge)
 	select {
-	case message := <-messages:
+	case message := <-inbox.messages:
 		require.Contains(t, message, "snapshot-smtp")
+		status, err := f.latestStatus()
+		require.NoError(t, err)
+		require.True(t, status.Status.IsActive(), "run must stay active until notification completes")
 	case <-time.After(distrTestTimeout(20 * time.Second)):
 		t.Fatal("SMTP notification was not received")
 	}
 }
 
 // A separate listener for each attempt proves that retries use the current base.
-func receiveSMTP(t *testing.T) (string, <-chan string) {
+func receiveSMTP(t *testing.T) (string, smtpInbox) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	host, port, err := net.SplitHostPort(listener.Addr().String())
 	require.NoError(t, err)
 	messages := make(chan string, 1)
+	acknowledge := make(chan struct{})
 	done := make(chan struct{})
 	t.Cleanup(func() { _ = listener.Close(); <-done })
 	go func() {
@@ -124,6 +134,11 @@ func receiveSMTP(t *testing.T) (string, <-chan string) {
 					return
 				}
 				messages <- string(body)
+				select {
+				case <-acknowledge:
+				case <-t.Context().Done():
+					return
+				}
 			case line == "QUIT":
 				_ = wire.PrintfLine("221 Bye")
 				return
@@ -138,7 +153,7 @@ func receiveSMTP(t *testing.T) (string, <-chan string) {
 			}
 		}
 	}()
-	return fmt.Sprintf("smtp:\n  host: %s\n  port: %q\n", host, port), messages
+	return fmt.Sprintf("smtp:\n  host: %s\n  port: %q\n", host, port), smtpInbox{messages: messages, acknowledge: acknowledge}
 }
 
 func TestBaseConfig_EnvVarsExpandOnWorker(t *testing.T) {
