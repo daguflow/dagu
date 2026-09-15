@@ -142,7 +142,7 @@ func (store *Store) newStatusIterators(ctx context.Context, opts persis.DAGRunSt
 		}
 		roots = listed
 	} else {
-		roots = append(roots, NewDataRoot(store.baseDir, opts.ExactName))
+		roots = append(roots, store.dataRoot(opts.ExactName))
 	}
 
 	iterators := make([]*dagRunStatusIterator, 0, len(roots))
