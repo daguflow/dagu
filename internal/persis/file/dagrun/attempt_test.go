@@ -6,6 +6,7 @@ package dagrun
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -53,6 +54,7 @@ func TestAttempt_OpenRejectsCorruptDAGDefinition(t *testing.T) {
 	att, err := NewAttempt(file, nil)
 	require.NoError(t, err)
 	att.SetDAG(&ir.DAG{Name: "test"})
+	att.snapshot = &snapshotCodec{dataDir: t.TempDir()}
 	require.NoError(t, att.Open(ctx))
 	require.NoError(t, att.Close(ctx))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, DAGDefinition), []byte("{"), 0600))
@@ -61,6 +63,97 @@ func TestAttempt_OpenRejectsCorruptDAGDefinition(t *testing.T) {
 	require.NoError(t, err)
 	err = reopened.Open(ctx)
 	require.ErrorContains(t, err, "failed to restore DAG definition")
+}
+
+const snapshotTestKeyPath = "auth/encryption_key"
+
+func TestSnapshotRead(t *testing.T) {
+	t.Setenv("DAGU_ENCRYPTION_KEY", "")
+	for _, name := range []string{"Legacy", "Unsupported", "Tampered", "Malformed", "MissingKey", "WrongKey", "Unconfigured"} {
+		t.Run(name, func(t *testing.T) {
+			ctx := t.Context()
+			dir := createTempDir(t)
+			file := filepath.Join(dir, JSONLStatusFile)
+			codec := &snapshotCodec{dataDir: t.TempDir()}
+			original := &ir.DAG{Name: "snapshot", YamlData: []byte("smtp:\n  password: original\n")}
+			plaintext, err := json.Marshal(original)
+			require.NoError(t, err)
+			raw, err := codec.encode(plaintext)
+			require.NoError(t, err)
+			keyPath := filepath.Join(codec.dataDir, snapshotTestKeyPath)
+
+			switch name {
+			case "Legacy":
+				raw = plaintext
+				require.NoError(t, os.Remove(keyPath))
+			case "Unsupported":
+				raw = bytes.Replace(raw, []byte("v1:"), []byte("v2:"), 1)
+			case "Tampered":
+				var envelope string
+				require.NoError(t, json.Unmarshal(raw, &envelope))
+				ciphertext, err := base64.StdEncoding.DecodeString(envelope[len(snapshotPrefix):])
+				require.NoError(t, err)
+				ciphertext[len(ciphertext)-1] ^= 1
+				raw, err = json.Marshal(snapshotPrefix + base64.StdEncoding.EncodeToString(ciphertext))
+				require.NoError(t, err)
+			case "Malformed":
+				raw = []byte(`"dagu:dag-snapshot:v1:!"`)
+			case "MissingKey":
+				require.NoError(t, os.Remove(keyPath))
+			case "WrongKey":
+				t.Setenv("DAGU_ENCRYPTION_KEY", "wrong-key")
+			case "Unconfigured":
+				codec = nil
+			}
+			snapshotPath := filepath.Join(dir, DAGDefinition)
+			require.NoError(t, os.WriteFile(snapshotPath, raw, 0600))
+			attempt, err := NewAttempt(file, nil)
+			require.NoError(t, err)
+			attempt.snapshot = codec
+			loaded, readErr := attempt.ReadDAG(ctx)
+			openErr := attempt.Open(ctx)
+			if name == "Legacy" {
+				require.NoError(t, readErr)
+				require.Equal(t, original, loaded)
+				require.NoError(t, openErr)
+				require.NoError(t, attempt.Close(ctx))
+			} else {
+				require.Error(t, readErr)
+				require.Error(t, openErr)
+			}
+			if name == "Legacy" || name == "MissingKey" {
+				require.NoFileExists(t, keyPath)
+			}
+			after, err := os.ReadFile(snapshotPath)
+			require.NoError(t, err)
+			require.Equal(t, raw, after)
+		})
+	}
+}
+
+func TestSnapshotWriteFailure(t *testing.T) {
+	t.Setenv("DAGU_ENCRYPTION_KEY", "")
+	for _, name := range []string{"Unconfigured", "EmptyKey"} {
+		t.Run(name, func(t *testing.T) {
+			dir := createTempDir(t)
+			file := filepath.Join(dir, DAGDefinition)
+			original := []byte(`{"name":"original"}`)
+			require.NoError(t, os.WriteFile(file, original, 0600))
+			attempt, err := NewAttempt(filepath.Join(dir, JSONLStatusFile), nil)
+			require.NoError(t, err)
+			attempt.SetDAG(&ir.DAG{Name: "replacement"})
+			if name == "EmptyKey" {
+				attempt.snapshot = &snapshotCodec{dataDir: t.TempDir()}
+				keyPath := filepath.Join(attempt.snapshot.dataDir, snapshotTestKeyPath)
+				require.NoError(t, os.MkdirAll(filepath.Dir(keyPath), 0750))
+				require.NoError(t, os.WriteFile(keyPath, nil, 0600))
+			}
+			require.Error(t, attempt.Open(t.Context()))
+			after, err := os.ReadFile(file)
+			require.NoError(t, err)
+			require.Equal(t, original, after)
+		})
+	}
 }
 
 func TestAttempt_Write(t *testing.T) {
@@ -1331,7 +1424,7 @@ func setupEventTest(t *testing.T, store *captureEventStore) eventTest {
 		eventstore.Source{Service: eventstore.SourceServiceServer},
 	)
 	dag := &ir.DAG{Name: "TestDAG", Location: filepath.Join(dir, "test-dag.yaml")}
-	repository := persis.NewDAGRunRepository(NewStore(dir), nil, persis.DAGRunRepositoryOptions{})
+	repository := persis.NewDAGRunRepository(NewStore(dir, t.TempDir()), nil, persis.DAGRunRepositoryOptions{})
 	att, err := repository.CreateAttempt(ctx, dag, time.Now(), "test", persis.DAGRunCreateAttemptOptions{
 		AttemptID: "attempt-1",
 	})

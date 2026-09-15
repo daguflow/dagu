@@ -888,7 +888,7 @@ func newQueueConditionFixtureWithConfig(
 	if fixtureConfig.statusCache != nil {
 		storeOptions = append(storeOptions, filedagrun.WithHistoryFileCache(fixtureConfig.statusCache))
 	}
-	dagRunRepository := newCountingDAGRunStore(filedagrun.NewStore(filepath.Join(tmp, "dag-runs"), storeOptions...))
+	dagRunRepository := newCountingDAGRunStore(filedagrun.NewStore(filepath.Join(tmp, "dag-runs"), tmp, storeOptions...))
 	var queueStore queuedomain.QueueStore = store.NewQueueStore(file.NewCollection(filepath.Join(tmp, "queue")))
 	if fixtureConfig.queueStore != nil {
 		queueStore = fixtureConfig.queueStore(queueStore)

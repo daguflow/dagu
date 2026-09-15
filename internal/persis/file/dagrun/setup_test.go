@@ -27,7 +27,7 @@ func setupTestRepository(t *testing.T) RepositoryTest {
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
 
-	backend := NewStore(tmpDir, WithArtifactDir(filepath.Join(tmpDir, "artifacts")))
+	backend := NewStore(tmpDir, t.TempDir(), WithArtifactDir(filepath.Join(tmpDir, "artifacts")))
 	th := RepositoryTest{
 		Context: context.Background(),
 		Repository: persis.NewDAGRunRepository(backend, NewWorkDirStore(filepath.Join(tmpDir, ".dag-run-work"), tmpDir), persis.DAGRunRepositoryOptions{

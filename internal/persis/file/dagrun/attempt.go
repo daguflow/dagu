@@ -34,6 +34,8 @@ var (
 	ErrWriteFailed       = errors.New("failed to write to status file")
 	ErrCompactFailed     = errors.New("failed to compact status file")
 	ErrContextCanceled   = errors.New("operation canceled by context")
+
+	errDAGDefinitionNotFound = errors.New("DAG definition file not found")
 )
 
 // DAGDefinition is the name of the file where the DAG definition is stored.
@@ -53,6 +55,7 @@ var _ dagrun.Attempt = (*Attempt)(nil)
 // Attempt manages an append-only status file with read, write, and compaction capabilities.
 // It provides thread-safe operations and supports metrics collection.
 type Attempt struct {
+	snapshot  *snapshotCodec
 	id        string                            // Attempt ID, extracted from the file path
 	file      string                            // Path to the status file
 	writer    *Writer                           // Writer for appending status updates
@@ -104,18 +107,17 @@ func (att *Attempt) ReadDAG(_ context.Context) (*ir.DAG, error) {
 	dir := filepath.Dir(att.file)
 	dagFile := filepath.Join(dir, DAGDefinition)
 
-	// Check if the file exists
-	if _, err := os.Stat(dagFile); err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("DAG definition file not found: %w", err)
-		}
-		return nil, fmt.Errorf("failed to access DAG definition file: %w", err)
-	}
-
 	// Read the file
 	data, err := fileutil.ReadFile(dagFile)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("%w: %w", errDAGDefinitionNotFound, err)
+		}
 		return nil, fmt.Errorf("failed to read DAG definition file: %w", err)
+	}
+	data, err = att.snapshot.decode(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode DAG snapshot: %w", err)
 	}
 
 	// Parse the JSON data
@@ -149,6 +151,10 @@ func (att *Attempt) Open(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to marshal DAG definition: %w", err)
 		}
+		dagJSON, err = att.snapshot.encode(dagJSON)
+		if err != nil {
+			return fmt.Errorf("failed to encrypt DAG snapshot: %w", err)
+		}
 		if err := fileutil.WriteFileAtomic(filepath.Join(dir, DAGDefinition), dagJSON, 0600); err != nil {
 			return fmt.Errorf("failed to write DAG definition: %w", err)
 		}
@@ -157,7 +163,7 @@ func (att *Attempt) Open(ctx context.Context) error {
 		switch {
 		case err == nil:
 			att.dag = dag
-		case !errors.Is(err, os.ErrNotExist):
+		case !errors.Is(err, errDAGDefinitionNotFound):
 			return fmt.Errorf("failed to restore DAG definition: %w", err)
 		}
 	}

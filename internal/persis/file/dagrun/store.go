@@ -25,6 +25,7 @@ const defaultRetryCandidateCacheLimit = 2000
 
 // Store manages DAG run status files on the local filesystem.
 type Store struct {
+	snapshot        snapshotCodec
 	baseDir         string
 	artifactDir     string
 	cache           *fileutil.Cache[*ir.DAGRunStatus]
@@ -74,15 +75,24 @@ func newOptions(baseDir string, opts []StoreOption) options {
 	return cfg
 }
 
-// NewStore creates filesystem DAG-run storage.
-func NewStore(baseDir string, opts ...StoreOption) *Store {
+// NewStore creates filesystem DAG-run storage using dataDir for encryption keys.
+func NewStore(baseDir, dataDir string, opts ...StoreOption) *Store {
 	cfg := newOptions(baseDir, opts)
 	return &Store{
+		snapshot:        snapshotCodec{dataDir: dataDir},
 		baseDir:         baseDir,
 		artifactDir:     cfg.artifactDir,
 		cache:           cfg.fileCache,
 		retryCandidates: retryCandidateCache{limit: cfg.retryCandidateCacheLimit},
 	}
+}
+
+func (store *Store) configureAttempt(attempt *Attempt, err error) (dagrun.Attempt, error) {
+	if err != nil {
+		return nil, err
+	}
+	attempt.snapshot = &store.snapshot
+	return attempt, nil
 }
 
 // resolveStatus resolves and filters a DAGRunStatus for a single dagRun.
@@ -209,7 +219,7 @@ func (store *Store) CompareAndSwapLatestAttemptStatus(
 		}
 	}
 
-	attempt, err := run.LatestAttempt(ctx, store.cache)
+	attempt, err := store.configureAttempt(run.LatestAttempt(ctx, store.cache))
 	if err != nil {
 		return nil, false, err
 	}
@@ -300,7 +310,7 @@ func (store *Store) CreateAttempt(ctx context.Context, req persis.DAGRunCreateAt
 	}
 	attempt.SetDAG(req.DAG)
 
-	return attempt, nil
+	return store.configureAttempt(attempt, nil)
 }
 
 func (store *Store) newChildAttempt(ctx context.Context, req persis.DAGRunCreateAttemptRequest) (dagrun.Attempt, error) {
@@ -345,7 +355,7 @@ func (store *Store) newChildAttempt(ctx context.Context, req persis.DAGRunCreate
 	}
 	attempt.SetDAG(req.DAG)
 
-	return attempt, nil
+	return store.configureAttempt(attempt, nil)
 }
 
 // RecentStatuses returns the newest readable status for recent DAG runs.
@@ -380,7 +390,7 @@ func (store *Store) LatestAttempt(ctx context.Context, query persis.DAGRunLatest
 
 	if !query.NotBefore.IsZero() {
 		if attempt, err := root.latestAttemptFromPointer(ctx, store.cache, query.NotBefore); err == nil {
-			return attempt, nil
+			return store.configureAttempt(attempt, nil)
 		}
 
 		exec, err := root.LatestAfter(ctx, query.NotBefore)
@@ -394,11 +404,11 @@ func (store *Store) LatestAttempt(ctx context.Context, query persis.DAGRunLatest
 				logger.Debug(ctx, "Failed to refresh DAG-run latest attempt pointer", tag.Error(markerErr))
 			}
 		}
-		return attempt, err
+		return store.configureAttempt(attempt, err)
 	}
 
 	if attempt, err := root.latestAttemptFromPointer(ctx, store.cache, persis.TimeInUTC{}); err == nil {
-		return attempt, nil
+		return store.configureAttempt(attempt, nil)
 	}
 
 	// Get the latest execution data.
@@ -412,7 +422,7 @@ func (store *Store) LatestAttempt(ctx context.Context, query persis.DAGRunLatest
 			logger.Debug(ctx, "Failed to refresh DAG-run latest attempt pointer", tag.Error(markerErr))
 		}
 	}
-	return attempt, err
+	return store.configureAttempt(attempt, err)
 }
 
 // FindAttempt finds the latest attempt by DAG-run ID.
@@ -423,7 +433,7 @@ func (store *Store) FindAttempt(ctx context.Context, ref ir.DAGRunRef) (dagrun.A
 		return nil, err
 	}
 
-	return run.LatestAttempt(ctx, store.cache)
+	return store.configureAttempt(run.LatestAttempt(ctx, store.cache))
 }
 
 // FindSubAttempt finds a sub dag-run by its ID.
@@ -439,7 +449,7 @@ func (store *Store) FindSubAttempt(ctx context.Context, ref ir.DAGRunRef, subDAG
 	if err != nil {
 		return nil, fmt.Errorf("failed to find sub dag-run: %w", err)
 	}
-	return subDAGRun.LatestAttempt(ctx, store.cache)
+	return store.configureAttempt(subDAGRun.LatestAttempt(ctx, store.cache))
 }
 
 // RemoveOldDAGRuns removes final runs outside a normalized retention policy.

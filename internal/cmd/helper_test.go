@@ -6,14 +6,61 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
+	"github.com/dagucloud/dagu/v2/internal/cmn/config"
 	"github.com/dagucloud/dagu/v2/internal/ir"
+	"github.com/dagucloud/dagu/v2/internal/persis"
+	persisfile "github.com/dagucloud/dagu/v2/internal/persis/file"
 	"github.com/dagucloud/dagu/v2/internal/spec"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRestoreSnapshotSMTP(t *testing.T) {
+	t.Setenv("DAGU_ENCRYPTION_KEY", "")
+	ctx := t.Context()
+	sourceDir := t.TempDir()
+	dagPath := filepath.Join(sourceDir, "retry-smtp.yaml")
+	basePath := filepath.Join(sourceDir, "base.yaml")
+	require.NoError(t, os.WriteFile(dagPath, []byte("name: retry-smtp\nsmtp:\n  username: ${SMTP_USER}\nsteps:\n  - run: echo ok\n"), 0600))
+	require.NoError(t, os.WriteFile(basePath, []byte("smtp:\n  host: smtp.example.com\n  port: 587\n  password: original-password\n"), 0600))
+	dag, err := spec.Load(ctx, dagPath, spec.WithBaseConfig(basePath))
+	require.NoError(t, err)
+	require.NotNil(t, dag.SMTP)
+	want := *dag.SMTP
+
+	// Separate directories exercise custom history paths and persistent key lookup.
+	cfg := &config.Config{Paths: config.PathsConfig{DataDir: t.TempDir(), DAGRunsDir: t.TempDir()}}
+	repository := persisfile.NewDAGRunRepository(cfg)
+	attempt, err := repository.CreateAttempt(ctx, dag, time.Now(), "run", persis.DAGRunCreateAttemptOptions{})
+	require.NoError(t, err)
+	require.NoError(t, attempt.Open(ctx))
+	status := ir.InitialStatus(dag)
+	status.DAGRunID = "run"
+	status.AttemptID = attempt.ID()
+	status.Status = ir.Failed
+	require.NoError(t, attempt.Write(ctx, status))
+	require.NoError(t, attempt.Close(ctx))
+
+	require.NoError(t, os.Remove(dagPath))
+	require.NoError(t, os.WriteFile(basePath, []byte("smtp:\n  password: replacement-password\n"), 0600))
+	repository = persisfile.NewDAGRunRepository(cfg)
+	reopened, err := repository.FindAttempt(ctx, ir.NewDAGRunRef(dag.Name, "run"))
+	require.NoError(t, err)
+	loaded, err := reopened.ReadDAG(ctx)
+	require.NoError(t, err)
+	restored, err := restoreDAGFromStatus(ctx, loaded, &status)
+	require.NoError(t, err)
+	require.NotNil(t, restored.SMTP)
+	require.Equal(t, want, *restored.SMTP)
+	require.Equal(t, "${SMTP_USER}", restored.SMTP.Username)
+	require.Equal(t, "original-password", restored.SMTP.Password)
+}
 
 func TestQuoteParamValues(t *testing.T) {
 	t.Parallel()

@@ -458,7 +458,7 @@ func TestAgent_Run(t *testing.T) {
 		snapshotErr := errors.New("snapshot unavailable")
 		workDirs := &failingWorkDirStore{dir: t.TempDir(), snapshotErr: snapshotErr}
 		repository := persis.NewDAGRunRepository(
-			filedagrun.NewStore(th.Config.Paths.DAGRunsDir),
+			filedagrun.NewStore(th.Config.Paths.DAGRunsDir, th.Config.Paths.DataDir),
 			workDirs,
 			persis.DAGRunRepositoryOptions{},
 		)

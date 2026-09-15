@@ -701,6 +701,32 @@ API keys can be created with independent role assignments. Audit logging tracks 
 - Mutual TLS for gRPC coordinator/worker communication (`DAGU_PEER_CERT_FILE`, `DAGU_PEER_KEY_FILE`, `DAGU_PEER_CLIENT_CA_FILE`)
 - Secret management with environment variables, files, Kubernetes Secrets, [HashiCorp Vault](https://www.vaultproject.io/), and cloud-provider secret stores
 
+### Encrypted Run Snapshots
+
+Newly written `dag.json` run snapshots use AES-256-GCM encryption. The complete
+snapshot retains the original DAG and inherited base YAML, including nested
+DAGs, so retry and restart can restore configuration after source files change.
+
+The key comes from `DAGU_ENCRYPTION_KEY`, or from
+`<paths.data_dir>/auth/encryption_key`. Dagu creates the key automatically when
+neither is configured. Empty or unreadable key files cause an error. Reading an
+encrypted snapshot requires its original key; decryption failures stop
+restoration instead of substituting current configuration.
+
+Persist the key with run history and include it in secure backups. In Docker,
+persist the configured data directory. All processes sharing history need the
+same key, including when `paths.dag_runs_dir` is outside the data directory.
+Replacing the key makes snapshots encrypted with the previous key unreadable.
+
+Upgrade all binaries sharing history together: older binaries cannot read the
+encrypted format. Legacy snapshots remain readable and are not converted on
+read. Historical snapshots and backups may still contain credentials; this
+change does not include a migration command.
+
+Encryption applies to `dag.json`; source YAML, logs, and other persisted formats
+have separate storage behavior. Prefer external secret references over literal
+credentials. A reader with both the snapshot and its key can decrypt it.
+
 ### Production Hardening
 
 For self-hosted production deployments, treat network exposure and execution boundaries as the primary controls:

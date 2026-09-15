@@ -25,7 +25,7 @@ func TestStoreWritesCurrentDAGRunFileCompatibilityLayout(t *testing.T) {
 	ctx := context.Background()
 	baseDir := t.TempDir()
 	workRoot := filepath.Join(baseDir, ".dag-run-work")
-	store := NewStore(baseDir, WithArtifactDir(filepath.Join(baseDir, "artifacts")))
+	store := NewStore(baseDir, t.TempDir(), WithArtifactDir(filepath.Join(baseDir, "artifacts")))
 	repository := persis.NewDAGRunRepository(store, NewWorkDirStore(workRoot, baseDir), persis.DAGRunRepositoryOptions{LatestStatusToday: true})
 
 	parentDAG := &ir.DAG{
@@ -246,7 +246,7 @@ func TestWorkDirStorePrunesDAGDir(t *testing.T) {
 func TestStoreRetriesLegacySubDAGRunInSameDirectory(t *testing.T) {
 	ctx := context.Background()
 	baseDir := t.TempDir()
-	store := NewStore(baseDir, WithArtifactDir(filepath.Join(baseDir, "artifacts")))
+	store := NewStore(baseDir, t.TempDir(), WithArtifactDir(filepath.Join(baseDir, "artifacts")))
 	repository := persis.NewDAGRunRepository(store, NewWorkDirStore(filepath.Join(baseDir, ".dag-run-work"), baseDir), persis.DAGRunRepositoryOptions{LatestStatusToday: true})
 
 	parentDAG := &ir.DAG{
@@ -1089,7 +1089,7 @@ func TestLatestStatusTimezone(t *testing.T) {
 	require.NoError(t, err)
 
 	now := time.Date(2025, 6, 8, 10, 0, 0, 0, time.UTC)
-	backend := NewStore(t.TempDir())
+	backend := NewStore(t.TempDir(), t.TempDir())
 	repository := persis.NewDAGRunRepository(backend, nil, persis.DAGRunRepositoryOptions{
 		LatestStatusToday: true,
 		Location:          paris,

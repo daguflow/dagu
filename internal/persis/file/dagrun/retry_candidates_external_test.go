@@ -215,7 +215,7 @@ func TestStoreListRetryCandidatesBoundsCache(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			baseDir := t.TempDir()
-			store := filedagrun.NewStore(baseDir, filedagrun.WithRetryCandidateCacheLimit(tt.limit))
+			store := filedagrun.NewStore(baseDir, t.TempDir(), filedagrun.WithRetryCandidateCacheLimit(tt.limit))
 			repository := persis.NewDAGRunRepository(
 				store,
 				filedagrun.NewWorkDirStore(filepath.Join(baseDir, ".dag-run-work"), baseDir),

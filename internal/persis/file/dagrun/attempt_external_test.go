@@ -5,6 +5,8 @@ package dagrun_test
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -16,8 +18,56 @@ import (
 	"github.com/dagucloud/dagu/v2/internal/ir"
 	"github.com/dagucloud/dagu/v2/internal/persis"
 	filedagrun "github.com/dagucloud/dagu/v2/internal/persis/file/dagrun"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestSnapshotSecrets(t *testing.T) {
+	t.Setenv("DAGU_ENCRYPTION_KEY", "")
+	ctx := t.Context()
+	dir := t.TempDir()
+	repository := newFileRepository(dir, persis.DAGRunRepositoryOptions{})
+	dag := &ir.DAG{
+		Name:           "snapshot",
+		YamlData:       []byte("smtp:\n  password: dag-secret\n"),
+		BaseConfigData: []byte("smtp:\n  password: base-secret\n  username: ${SMTP_USER}\n"),
+		LocalDAGs: map[string]*ir.DAG{
+			"child": {Name: "child", YamlData: []byte("smtp:\n  password: child-secret\n")},
+		},
+	}
+	want, err := json.Marshal(dag)
+	require.NoError(t, err)
+	attempt, err := repository.CreateAttempt(ctx, dag, time.Now(), "run", persis.DAGRunCreateAttemptOptions{})
+	require.NoError(t, err)
+	require.NoError(t, attempt.Open(ctx))
+	status := ir.InitialStatus(dag)
+	status.DAGRunID = "run"
+	status.AttemptID = attempt.ID()
+	require.NoError(t, attempt.Write(ctx, status))
+	require.NoError(t, attempt.Close(ctx))
+
+	raw, err := os.ReadFile(filepath.Join(filepath.Dir(findOnlyStatusFile(t, dir)), filedagrun.DAGDefinition))
+	require.NoError(t, err)
+	var legacy ir.DAG
+	require.Error(t, json.Unmarshal(raw, &legacy), "legacy readers must reject encrypted snapshots")
+	for _, source := range [][]byte{dag.YamlData, dag.BaseConfigData, dag.LocalDAGs["child"].YamlData} {
+		assert.NotContains(t, string(raw), string(source))
+		// Base64 alone must not expose the saved source without the key.
+		assert.NotContains(t, string(raw), base64.StdEncoding.EncodeToString(source))
+	}
+
+	repository = newFileRepository(dir, persis.DAGRunRepositoryOptions{})
+	reopened, err := repository.FindAttempt(ctx, ir.NewDAGRunRef(dag.Name, "run"))
+	require.NoError(t, err)
+	loaded, err := reopened.ReadDAG(ctx)
+	require.NoError(t, err)
+	got, err := json.Marshal(loaded)
+	require.NoError(t, err)
+	assert.JSONEq(t, string(want), string(got))
+	unchanged, err := json.Marshal(dag)
+	require.NoError(t, err)
+	assert.Equal(t, want, unchanged)
+}
 
 func TestAttemptCloseKeepsSingleStatusFile(t *testing.T) {
 	ctx := context.Background()
@@ -156,7 +206,7 @@ func TestCompareAndSwapLatestAttemptStatusReturnsNormalizedConditions(t *testing
 
 func newFileRepository(baseDir string, options persis.DAGRunRepositoryOptions) *persis.DAGRunRepository {
 	return persis.NewDAGRunRepository(
-		filedagrun.NewStore(baseDir),
+		filedagrun.NewStore(baseDir, filepath.Join(baseDir, ".storage")),
 		filedagrun.NewWorkDirStore(filepath.Join(baseDir, ".dag-run-work"), baseDir),
 		options,
 	)
