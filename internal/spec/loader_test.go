@@ -1948,6 +1948,8 @@ steps:
 			assert.Contains(t, childDAG.Env, "WORKSPACE_ONLY=ops")
 			assert.Contains(t, childDAG.Env, "SHARED=workspace")
 			assert.Contains(t, string(childDAG.BaseConfigData), "WORKSPACE_ONLY")
+			require.NotNil(t, childDAG.BaseConfigWorkspace)
+			assert.Equal(t, "ops", *childDAG.BaseConfigWorkspace)
 		})
 	}
 }

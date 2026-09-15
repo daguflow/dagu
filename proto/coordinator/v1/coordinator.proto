@@ -165,6 +165,8 @@ message Task {
   string target_worker_id = 37;
   // When true, a targeted step retry also resets reachable descendants.
   bool include_downstream = 38;
+  // Workspace supplying base configuration; empty selects global configuration.
+  optional string base_config_workspace = 39;
 }
 
 enum Operation {

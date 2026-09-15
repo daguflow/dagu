@@ -33,6 +33,7 @@ import (
 	"github.com/dagucloud/dagu/v2/internal/service/coordinator"
 	"github.com/dagucloud/dagu/v2/internal/service/worker/coordreport"
 	"github.com/dagucloud/dagu/v2/internal/serviceregistry"
+	"github.com/dagucloud/dagu/v2/internal/spec"
 	"github.com/dagucloud/dagu/v2/internal/test"
 	coordinatorv1 "github.com/dagucloud/dagu/v2/proto/coordinator/v1"
 	"github.com/stretchr/testify/assert"
@@ -912,6 +913,54 @@ func TestCreateAgentEnv(t *testing.T) {
 
 func TestLoadDAG(t *testing.T) {
 	t.Parallel()
+
+	t.Run("LegacyWorkspace", func(t *testing.T) {
+		t.Parallel()
+		baseDir := t.TempDir()
+		require.NoError(t, os.Mkdir(filepath.Join(baseDir, "ops"), 0750))
+		require.NoError(t, os.WriteFile(filepath.Join(baseDir, "ops", "base.yaml"), []byte("smtp:\n  host: ops.example\n"), 0600))
+		handler := &remoteTaskHandler{config: &config.Config{}}
+		loaded, err := handler.loadDAG(context.Background(), &coordinatorv1.Task{
+			Target: "child", Definition: "steps:\n  - run: echo child\n", BaseConfig: "{}",
+		})
+		require.NoError(t, err)
+		t.Cleanup(loaded.cleanup)
+		// Tasks predating workspace provenance still inherit it from their saved parent.
+		parent := &ir.DAG{YamlData: []byte("labels: [workspace=ops]"), LocalDAGs: map[string]*ir.DAG{"child": loaded.dag}}
+		refreshed, err := spec.RefreshBaseSMTP(parent, spec.WithWorkspaceBaseConfigDir(baseDir))
+		require.NoError(t, err)
+		child, err := spec.RebuildFromYAML(context.Background(), refreshed.LocalDAGs["child"])
+		require.NoError(t, err)
+		require.NotNil(t, child.SMTP)
+		assert.Equal(t, "ops.example", child.SMTP.Host)
+	})
+
+	t.Run("BaseSMTP", func(t *testing.T) {
+		t.Parallel()
+		basePath := filepath.Join(t.TempDir(), "base.yaml")
+		require.NoError(t, os.WriteFile(basePath, []byte("smtp:\n  host: worker.example\n"), 0600))
+		handler := &remoteTaskHandler{config: &config.Config{Paths: config.PathsConfig{BaseConfig: basePath}}}
+		for _, tc := range []struct{ base, host string }{
+			{"smtp:\n  host: sender.example\n", "sender.example"},
+			{"{}\n", ""},
+			{"", "worker.example"},
+		} {
+			baseWorkspace := "ops"
+			loaded, err := handler.loadDAG(context.Background(), &coordinatorv1.Task{
+				Target: "child", Definition: "steps:\n  - run: echo hello\n",
+				BaseConfig: tc.base, BaseConfigWorkspace: &baseWorkspace,
+			})
+			require.NoError(t, err)
+			t.Cleanup(loaded.cleanup)
+			assert.Equal(t, &baseWorkspace, loaded.dag.BaseConfigWorkspace)
+			if tc.host == "" {
+				assert.Nil(t, loaded.dag.SMTP)
+			} else {
+				require.NotNil(t, loaded.dag.SMTP)
+				assert.Equal(t, tc.host, loaded.dag.SMTP.Host)
+			}
+		}
+	})
 
 	t.Run("FromDefinition", func(t *testing.T) {
 		t.Parallel()

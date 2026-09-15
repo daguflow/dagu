@@ -21,6 +21,7 @@ import (
 	"github.com/dagucloud/dagu/v2/internal/opencodehost"
 	"github.com/dagucloud/dagu/v2/internal/runtime/executor"
 	runtimeenvtransport "github.com/dagucloud/dagu/v2/internal/runtimeenv/transport"
+	"github.com/dagucloud/dagu/v2/internal/spec"
 )
 
 // DAGExecutor handles both local and distributed DAG execution.
@@ -230,11 +231,19 @@ func (e *DAGExecutor) executeDAG(
 		if dag.Type == ir.TypeBuild {
 			return dispatch.ErrBuildRequiresLocal
 		}
+		var err error
+		dag, err = spec.RefreshBaseSMTP(dag,
+			spec.WithBaseConfig(e.baseConfigPath),
+			spec.WithWorkspaceBaseConfigDir(e.workspaceBaseConfigDir),
+		)
+		if err != nil {
+			return err
+		}
 		// Distributed execution: dispatch to coordinator
 		taskOpts := []executor.TaskOption{
 			executor.WithWorkerSelector(dag.WorkerSelector),
 			executor.WithPreviousStatus(previousStatus),
-			executor.WithBaseConfig(executor.ResolveBaseConfig(dag.BaseConfigData, e.baseConfigPath)),
+			executor.WithBaseConfig(executor.ResolveBaseConfig(dag.BaseConfigData, e.baseConfigPath), dag.BaseConfigWorkspace),
 		}
 		if definitionID != "" {
 			taskOpts = append(taskOpts, executor.WithDefinitionID(definitionID))

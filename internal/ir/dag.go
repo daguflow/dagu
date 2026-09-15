@@ -219,6 +219,9 @@ type DAG struct {
 	// This is used to propagate base config through distributed execution
 	// and sub-DAG chains, so workers don't need local base config files.
 	BaseConfigData []byte `json:"baseConfigData,omitempty"`
+	// BaseConfigWorkspace identifies the workspace supplying base configuration.
+	// An empty name selects global configuration; nil denotes unknown provenance.
+	BaseConfigWorkspace *string `json:"baseConfigWorkspace,omitempty"`
 	// Container contains the container definition for the DAG.
 	Container *Container `json:"container,omitempty"`
 	// RunConfig contains configuration for controlling user interactions during DAG runs.

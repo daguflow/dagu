@@ -5,15 +5,108 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
+	"github.com/dagucloud/dagu/v2/internal/cmn/config"
+	"github.com/dagucloud/dagu/v2/internal/dispatch"
 	"github.com/dagucloud/dagu/v2/internal/ir"
+	"github.com/dagucloud/dagu/v2/internal/persis"
+	"github.com/dagucloud/dagu/v2/internal/service/coordinator"
 	"github.com/dagucloud/dagu/v2/internal/spec"
+	"github.com/dagucloud/dagu/v2/internal/testutil"
+	"github.com/dagucloud/dagu/v2/internal/workspace"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestDispatchBaseConfig(t *testing.T) {
+	t.Parallel()
+
+	ctx := &Context{Context: context.Background(), Config: &config.Config{}, Quiet: true}
+	dag := &ir.DAG{Name: "smtp", BaseConfigData: []byte("smtp:\n  host: smtp.example\n")}
+	client := &smtpDispatchClient{err: errors.New("stop after dispatch")}
+	err := dispatchToCoordinatorAndWait(ctx, dag, "run", runOptions{}, client)
+	require.ErrorIs(t, err, client.err)
+	require.NotNil(t, client.task)
+	assert.Equal(t, string(dag.BaseConfigData), client.task.BaseConfig)
+}
+
+type smtpDispatchClient struct {
+	coordinator.Client
+	task *dispatch.DispatchTask
+	err  error
+}
+
+func (c *smtpDispatchClient) Dispatch(_ context.Context, req dispatch.DispatchRequest) error {
+	c.task = req.Task
+	return c.err
+}
+
+func TestRestoreDAGFromStatus_SMTP(t *testing.T) {
+	t.Parallel()
+
+	for _, current := range []string{"smtp:\n  host: current.example\n  password: current-password\n", "{}\n"} {
+		t.Run(current, func(t *testing.T) {
+			t.Parallel()
+			basePath := filepath.Join(t.TempDir(), "base.yaml")
+			require.NoError(t, os.WriteFile(basePath, []byte(current), 0600))
+			cfg := &config.Config{}
+			cfg.Paths.BaseConfig = basePath
+			ctx := config.WithConfig(context.Background(), cfg)
+			dag := &ir.DAG{
+				Name:           "smtp-retry",
+				YamlData:       []byte("smtp:\n  username: ${SMTP_USER}\nenv:\n  SMTP_USER: original-user\nsteps:\n  - run: echo original\n"),
+				BaseConfigData: []byte("smtp:\n  host: old.example\n  password: old-password\nenv:\n  ORIGINAL_BASE: original\n"),
+			}
+			restored, err := restoreDAGFromStatus(ctx, dag, &ir.DAGRunStatus{})
+			require.NoError(t, err)
+			require.NotNil(t, restored.SMTP)
+			assert.Equal(t, "${SMTP_USER}", restored.SMTP.Username)
+			if current == "{}\n" {
+				assert.Empty(t, restored.SMTP.Host)
+				assert.Empty(t, restored.SMTP.Password)
+			} else {
+				assert.Equal(t, "current.example", restored.SMTP.Host)
+				assert.Equal(t, "current-password", restored.SMTP.Password)
+			}
+			assert.Contains(t, restored.Env, "ORIGINAL_BASE=original")
+			assert.Contains(t, restored.Env, "SMTP_USER=original-user")
+		})
+	}
+}
+
+func TestRestoreLegacyChildSMTP(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{}
+	cfg.Paths.DAGsDir = t.TempDir()
+	basePath := workspace.BaseConfigPath(cfg.Paths.DAGsDir, "ops")
+	require.NoError(t, os.MkdirAll(filepath.Dir(basePath), 0750))
+	require.NoError(t, os.WriteFile(basePath, []byte("smtp:\n  host: workspace.example\n"), 0600))
+	ctx := config.WithConfig(context.Background(), cfg)
+	repository := testutil.NewFileDAGRunRepository(t.TempDir(), persis.DAGRunRepositoryOptions{})
+	parent := &ir.DAG{Name: "parent", YamlData: []byte("labels: [workspace=ops]\nsteps:\n  - run: echo parent\n")}
+	parentStatus := ir.DAGRunStatus{Name: "parent", DAGRunID: "parent-run", Status: ir.Failed}
+	attempt, err := repository.CreateAttempt(ctx, parent, time.Now(), parentStatus.DAGRunID, persis.DAGRunCreateAttemptOptions{})
+	require.NoError(t, err)
+	require.NoError(t, attempt.Open(ctx))
+	require.NoError(t, attempt.Write(ctx, parentStatus))
+	require.NoError(t, attempt.Close(ctx))
+	child := &ir.DAG{Name: "child", YamlData: []byte("steps:\n  - run: echo child\n"), BaseConfigData: []byte("{}")}
+	status := &ir.DAGRunStatus{Root: parentStatus.DAGRun(), Parent: parentStatus.DAGRun()}
+	got, err := restoreDAGFromStatus(ctx, child, status, repository)
+	require.NoError(t, err)
+	require.NotNil(t, got.SMTP)
+	assert.Equal(t, "workspace.example", got.SMTP.Host)
+	require.NotNil(t, got.BaseConfigWorkspace)
+	assert.Equal(t, "ops", *got.BaseConfigWorkspace)
+}
 
 func TestQuoteParamValues(t *testing.T) {
 	t.Parallel()

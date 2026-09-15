@@ -379,7 +379,11 @@ func (r *Runner) taskOptions(
 		options = append(options, executor.WithParallelItem(req.ParallelItem))
 	}
 	if baseConfig := subWorkflowBaseConfig(req); len(baseConfig) > 0 {
-		options = append(options, executor.WithBaseConfig(string(baseConfig)))
+		baseWorkspace := req.DAG.BaseConfigWorkspace
+		if len(req.DAG.BaseConfigData) == 0 && req.ParentDAG != nil {
+			baseWorkspace = req.ParentDAG.BaseConfigWorkspace
+		}
+		options = append(options, executor.WithBaseConfig(string(baseConfig), baseWorkspace))
 	}
 	if req.DAG.SourceFile != "" {
 		options = append(options, executor.WithSourceFile(req.DAG.SourceFile))

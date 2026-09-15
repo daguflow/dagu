@@ -131,6 +131,7 @@ var legacyDispatchTaskJSONFields = map[string]string{
 	"params":                        "Params",
 	"queue_name":                    "QueueName",
 	"base_config":                   "BaseConfig",
+	"base_config_workspace":         "BaseConfigWorkspace",
 	"labels":                        "Labels",
 	"schedule_time":                 "ScheduleTime",
 	"source_file":                   "SourceFile",

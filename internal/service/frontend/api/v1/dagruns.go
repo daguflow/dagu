@@ -578,7 +578,11 @@ func (a *API) loadInlineDAG(ctx context.Context, specContent string, name *strin
 	return dag, cleanup, nil
 }
 
-func restoreDAGRunSnapshot(ctx context.Context, dag *ir.DAG, status *ir.DAGRunStatus) (*ir.DAG, string, error) {
+func (a *API) restoreDAGRunSnapshot(ctx context.Context, dag *ir.DAG, status *ir.DAGRunStatus) (*ir.DAG, string, error) {
+	dag, err := a.refreshBaseSMTP(ctx, dag, status)
+	if err != nil {
+		return nil, "", err
+	}
 	runtimeParams := append([]string(nil), status.ParamsList...)
 	dag.Params = runtimeParams
 	resolvedEnv, err := runtimeenv.Resolve(ctx, dag)
@@ -3019,11 +3023,15 @@ func (a *API) retryDAGRun(ctx context.Context, dagName, dagRunID, retryDagRunID,
 		if dag.Type == ir.TypeBuild {
 			return retryDAGRunResult{}, buildRequiresLocalAPIError()
 		}
+		dag, err = a.refreshBaseSMTP(ctx, dag, prevStatus)
+		if err != nil {
+			return retryDAGRunResult{}, err
+		}
 		// Create and dispatch retry task to coordinator
 		opts := []executor.TaskOption{
 			executor.WithWorkerSelector(dag.WorkerSelector),
 			executor.WithPreviousStatus(prevStatus),
-			executor.WithBaseConfig(executor.ResolveBaseConfig(dag.BaseConfigData, a.config.Paths.BaseConfig)),
+			executor.WithBaseConfig(executor.ResolveBaseConfig(dag.BaseConfigData, a.config.Paths.BaseConfig), dag.BaseConfigWorkspace),
 		}
 		if workerID := ir.RetryAgentOwnerWorkerID(prevStatus, stepName != ""); workerID != "" {
 			opts = append(opts, executor.WithTargetWorkerID(workerID))
@@ -3437,7 +3445,7 @@ func (a *API) rescheduleDAGRun(ctx context.Context, dagName, dagRunID string, op
 	}
 	storedSourceFile := dag.SourceFile
 
-	snapshotDAG, preservedSnapshotParams, err := restoreDAGRunSnapshot(ctx, dag, status)
+	snapshotDAG, preservedSnapshotParams, err := a.restoreDAGRunSnapshot(ctx, dag, status)
 	if err != nil {
 		return rescheduleDAGRunResult{}, fmt.Errorf("failed to restore DAG snapshot: %w", err)
 	}
@@ -3917,10 +3925,15 @@ func (a *API) resumeSubDAGRun(ctx context.Context, rootRef ir.DAGRunRef, subDAGR
 
 func (a *API) resumeManagedAttempt(ctx context.Context, dag *ir.DAG, status *ir.DAGRunStatus, runID string) error {
 	if dispatch.ShouldDispatchToCoordinator(dag, a.coordinatorCli != nil, a.defaultExecMode) {
+		var err error
+		dag, err = a.refreshBaseSMTP(ctx, dag, status)
+		if err != nil {
+			return err
+		}
 		options := []executor.TaskOption{
 			executor.WithWorkerSelector(dag.WorkerSelector),
 			executor.WithPreviousStatus(status),
-			executor.WithBaseConfig(executor.ResolveBaseConfig(dag.BaseConfigData, a.config.Paths.BaseConfig)),
+			executor.WithBaseConfig(executor.ResolveBaseConfig(dag.BaseConfigData, a.config.Paths.BaseConfig), dag.BaseConfigWorkspace),
 		}
 		if workerID := ir.RetryAgentOwnerWorkerID(status, false); workerID != "" {
 			options = append(options, executor.WithTargetWorkerID(workerID))
@@ -5087,4 +5100,41 @@ func selectLogFile(node *ir.Node, stream api.Stream) string {
 		return node.Stderr
 	}
 	return node.Stdout
+}
+
+func (a *API) refreshBaseSMTP(ctx context.Context, dag *ir.DAG, status *ir.DAGRunStatus) (*ir.DAG, error) {
+	if dag.BaseConfigWorkspace == nil && !status.Parent.Zero() {
+		var attempt dagrun.Attempt
+		var err error
+		if status.Root.Zero() || status.Parent.ID == status.Root.ID {
+			attempt, err = a.dagRunRepository.FindAttempt(ctx, status.Parent)
+		} else {
+			attempt, err = a.dagRunRepository.FindSubAttempt(ctx, status.Root, status.Parent.ID)
+		}
+		if err != nil {
+			return nil, err
+		}
+		parent, err := attempt.ReadDAG(ctx)
+		if err != nil {
+			return nil, err
+		}
+		parentStatus, err := attempt.ReadStatus(ctx)
+		if err != nil {
+			return nil, err
+		}
+		parent, err = a.refreshBaseSMTP(ctx, parent, parentStatus)
+		if err != nil {
+			return nil, err
+		}
+		parent.LocalDAGs = map[string]*ir.DAG{dag.Name: dag}
+		parent, err = a.refreshBaseSMTP(ctx, parent, parentStatus)
+		if err != nil {
+			return nil, err
+		}
+		return parent.LocalDAGs[dag.Name], nil
+	}
+	return spec.RefreshBaseSMTP(dag,
+		spec.WithBaseConfig(a.config.Paths.BaseConfig),
+		spec.WithWorkspaceBaseConfigDir(workspace.BaseConfigDir(a.config.Paths.DAGsDir)),
+	)
 }

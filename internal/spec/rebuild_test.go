@@ -6,6 +6,8 @@ package spec_test
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -15,6 +17,99 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRefreshBaseSMTP(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	root := t.TempDir()
+	basePath := filepath.Join(root, "base.yaml")
+	workspaceDir := filepath.Join(root, "workspaces")
+	workspacePath := filepath.Join(workspaceDir, "ops", "base.yaml")
+	require.NoError(t, os.MkdirAll(filepath.Dir(workspacePath), 0750))
+	require.NoError(t, os.WriteFile(basePath, []byte("smtp:\n  host: old.example\n  password: old-secret\nenv:\n  ORIGINAL: original\n"), 0600))
+	definition := []byte("name: parent\nlabels: [workspace=ops]\nsteps:\n  - run: echo parent\n---\nname: child\nsteps:\n  - run: echo child\n")
+	opts := []spec.LoadOption{spec.WithBaseConfig(basePath), spec.WithWorkspaceBaseConfigDir(workspaceDir)}
+	dag, err := spec.LoadYAML(ctx, definition, opts...)
+	require.NoError(t, err)
+	snapshot, err := spec.PrepareDAGSnapshot(dag)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(basePath, []byte("smtp:\n  host: global.example\n  password: global-secret\nenv:\n  ORIGINAL: changed\n"), 0600))
+	require.NoError(t, os.WriteFile(workspacePath, []byte("smtp:\n  host: workspace.example\n"), 0600))
+
+	for _, legacy := range []bool{false, true} {
+		t.Run(fmt.Sprintf("legacy=%t", legacy), func(t *testing.T) {
+			input := snapshot.Clone()
+			if legacy {
+				input.BaseConfigData = dag.BaseConfigData
+				input.BaseConfigWorkspace = nil
+				input.LocalDAGs = map[string]*ir.DAG{"child": dag.LocalDAGs["child"].Clone()}
+				input.LocalDAGs["child"].BaseConfigWorkspace = nil
+			}
+			refreshed, err := spec.RefreshBaseSMTP(input, opts...)
+			require.NoError(t, err)
+			for _, candidate := range []*ir.DAG{refreshed, refreshed.LocalDAGs["child"]} {
+				rebuilt, err := spec.RebuildFromYAML(ctx, candidate)
+				require.NoError(t, err)
+				require.NotNil(t, rebuilt.SMTP)
+				assert.Equal(t, "workspace.example", rebuilt.SMTP.Host)
+				assert.Equal(t, "global-secret", rebuilt.SMTP.Password)
+				assert.Contains(t, rebuilt.Env, "ORIGINAL=original")
+			}
+			assert.Equal(t, definition, refreshed.YamlData)
+		})
+	}
+	// The child's workspace remains known when retried independently of its file.
+	child, err := spec.RefreshBaseSMTP(snapshot.LocalDAGs["child"], opts...)
+	require.NoError(t, err)
+	child, err = spec.RebuildFromYAML(ctx, child)
+	require.NoError(t, err)
+	assert.Equal(t, "workspace.example", child.SMTP.Host)
+
+	require.NoError(t, os.Remove(workspacePath))
+	current, err := spec.RefreshBaseSMTP(snapshot, opts...)
+	require.NoError(t, err)
+	current, err = spec.RebuildFromYAML(ctx, current)
+	require.NoError(t, err)
+	assert.Equal(t, "global.example", current.SMTP.Host)
+	require.NoError(t, os.Remove(basePath))
+	current, err = spec.RefreshBaseSMTP(snapshot, opts...)
+	require.NoError(t, err)
+	current, err = spec.RebuildFromYAML(ctx, current)
+	require.NoError(t, err)
+	assert.Nil(t, current.SMTP)
+	assert.Equal(t, "old.example", dag.SMTP.Host)
+}
+
+func TestSnapshotOAuthSMTP(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	dag, err := spec.LoadYAML(ctx, []byte("steps:\n  - run: echo hello\n"), spec.WithBaseConfigContent([]byte(`smtp:
+  username: sender@example.com
+  oauth:
+    provider: microsoft
+    tenant_id: tenant
+    client_id: client
+    client_secret: base-secret
+`)))
+	require.NoError(t, err)
+	snapshot, err := spec.PrepareDAGSnapshot(dag)
+	require.NoError(t, err)
+	assert.Equal(t, "{}", strings.TrimSpace(string(snapshot.BaseConfigData)))
+	rebuilt, err := spec.RebuildFromYAML(ctx, snapshot)
+	require.NoError(t, err)
+	assert.Nil(t, rebuilt.SMTP)
+	assert.Equal(t, "base-secret", dag.SMTP.OAuth.ClientSecret)
+
+	current, err := spec.RefreshBaseSMTP(snapshot, spec.WithBaseConfigContent([]byte("smtp:\n  host: password.example\n  password: new-secret\n")))
+	require.NoError(t, err)
+	current, err = spec.RebuildFromYAML(ctx, current)
+	require.NoError(t, err)
+	assert.Equal(t, "password.example", current.SMTP.Host)
+	assert.Equal(t, "new-secret", current.SMTP.Password)
+	assert.Nil(t, current.SMTP.OAuth)
+}
 
 func TestRebuildFromYAML_PreservesJSONSerializedFields(t *testing.T) {
 	t.Parallel()

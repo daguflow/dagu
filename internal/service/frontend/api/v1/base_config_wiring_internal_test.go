@@ -5,6 +5,8 @@ package api
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	generated "github.com/dagucloud/dagu/v2/api/v1"
@@ -14,8 +16,27 @@ import (
 
 	"github.com/dagucloud/dagu/v2/internal/cmn/config"
 	"github.com/dagucloud/dagu/v2/internal/dagsettings"
+	"github.com/dagucloud/dagu/v2/internal/ir"
 	"github.com/dagucloud/dagu/v2/internal/runtime"
 )
+
+func TestRestoreSnapshotSMTP(t *testing.T) {
+	t.Parallel()
+
+	basePath := filepath.Join(t.TempDir(), "base.yaml")
+	require.NoError(t, os.WriteFile(basePath, []byte("smtp:\n  host: current.example\n"), 0600))
+	a := &API{config: &config.Config{Paths: config.PathsConfig{BaseConfig: basePath}}}
+	dag := &ir.DAG{
+		Name: "snapshot", YamlData: []byte("steps:\n  - run: echo original\n"),
+		BaseConfigData: []byte("smtp:\n  host: old.example\nenv:\n  ORIGINAL: original\n"),
+	}
+	restored, _, err := a.restoreDAGRunSnapshot(context.Background(), dag, &ir.DAGRunStatus{})
+	require.NoError(t, err)
+	require.NotNil(t, restored.SMTP)
+	assert.Equal(t, "current.example", restored.SMTP.Host)
+	assert.Contains(t, restored.Env, "ORIGINAL=original")
+	assert.Equal(t, dag.YamlData, restored.YamlData)
+}
 
 type stubBaseConfigStore struct {
 	spec string
