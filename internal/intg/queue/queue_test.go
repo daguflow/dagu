@@ -613,6 +613,36 @@ steps:
 	assert.Equal(t, "xx", readFileContent(t, filepath.Join(dir, "attempts")))
 }
 
+// A DAG that takes its queue from base.yaml rather than its own YAML still has
+// its scheduled runs paced by that queue.
+func TestScheduledRunJoinsQueueFromBaseConfig(t *testing.T) {
+	f := newFixture(t, `
+type: graph
+name: base-queue-schedule-dag
+schedule: "* * * * *"
+steps:
+  - id: work
+    run: echo scheduled
+`, WithQueue("base-pool"), WithGlobalQueue("base-pool", 1))
+	require.NoError(t, os.WriteFile(f.th.Config.Paths.BaseConfig, []byte("queue: base-pool\n"), 0600))
+
+	f.StartScheduler(3 * time.Minute)
+	defer f.Stop()
+
+	var latest ir.DAGRunStatus
+	f.h.Wait.EventuallyEveryWithin("expected a scheduled run to finish", queueTestTimeout(140*time.Second), time.Second, func() bool {
+		status, err := f.th.DAGRunMgr.GetLatestStatus(f.th.Context, f.dag)
+		if err != nil || status.Status != ir.Succeeded {
+			return false
+		}
+		latest = status
+		return true
+	})
+	assert.Equal(t, ir.TriggerTypeScheduler, latest.TriggerType)
+	// Only a run the queue admitted records when it was queued.
+	assert.NotEmpty(t, latest.QueuedAt, "a scheduled run of a queued DAG must wait in its queue")
+}
+
 func readFileContent(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)
