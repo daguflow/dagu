@@ -4,14 +4,142 @@
 package distr_test
 
 import (
+	"fmt"
+	"net"
+	"net/textproto"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/dagucloud/dagu/v2/internal/cmn/config"
+	"github.com/dagucloud/dagu/v2/internal/dispatch"
 	"github.com/dagucloud/dagu/v2/internal/ir"
+	"github.com/dagucloud/dagu/v2/internal/service/scheduler"
 	"github.com/stretchr/testify/require"
 )
+
+func TestBaseConfig_SMTPRetry(t *testing.T) {
+	for _, mode := range []string{"local", "direct", "queued"} {
+		t.Run(mode, func(t *testing.T) {
+			basePath := filepath.Join(t.TempDir(), "base.yaml")
+			base, firstMail := receiveSMTP(t)
+			require.NoError(t, os.WriteFile(basePath, []byte(base), 0600))
+			selector := "worker_selector: {test: \"true\"}\n"
+			if mode == "local" {
+				selector = ""
+			}
+			f := newTestFixture(t, selector+`
+name: smtp-retry
+mail_on:
+  failure: true
+error_mail:
+  from: sender@example.com
+  to: recipient@example.com
+  prefix: snapshot-smtp
+steps:
+  - name: fail
+    run: exit 1
+`, withBaseConfigPath(basePath), withWorkerBaseConfigPath(filepath.Join(t.TempDir(), "missing.yaml")))
+			defer f.cleanup()
+			if mode == "queued" {
+				require.NoError(t, f.enqueue())
+				f.waitForQueued()
+				f.startScheduler(30 * time.Second)
+			} else {
+				require.NoError(t, f.start())
+			}
+			awaitSMTP(t, firstMail)
+			status := f.waitForStatus(ir.Failed, 20*time.Second)
+			f.waitForRunReleasedFromWorkers(status.DAGRunID, 10*time.Second)
+			attempt, err := f.coord.DAGRunRepository.FindAttempt(f.coord.Context, status.DAGRun())
+			require.NoError(t, err)
+			snapshot, err := attempt.ReadDAG(f.coord.Context)
+			require.NoError(t, err)
+
+			latestBase, retryMail := receiveSMTP(t)
+			require.NoError(t, os.WriteFile(basePath, []byte(latestBase), 0600))
+			if mode == "local" {
+				require.NoError(t, f.retry(status.DAGRunID))
+			} else {
+				executor := scheduler.NewDAGExecutor(f.coordinatorClient, nil, config.ExecutionModeDistributed, basePath)
+				require.NoError(t, executor.ExecuteDAG(f.coord.Context, snapshot, dispatch.DispatchOperationRetry,
+					status.DAGRunID, &status, ir.TriggerTypeRetry, ""))
+			}
+			awaitSMTP(t, retryMail)
+			f.h.Wait.EventuallyEveryWithin("retry finishes in a new attempt", distrTestTimeout(20*time.Second), 50*time.Millisecond, func() bool {
+				latest, err := f.latestStatus()
+				return err == nil && latest.Status == ir.Failed && latest.AttemptID != status.AttemptID
+			})
+		})
+	}
+}
+
+func awaitSMTP(t *testing.T, messages <-chan string) {
+	t.Helper()
+	select {
+	case message := <-messages:
+		require.Contains(t, message, "snapshot-smtp")
+	case <-time.After(distrTestTimeout(20 * time.Second)):
+		t.Fatal("SMTP notification was not received")
+	}
+}
+
+// A separate listener for each attempt proves that retries use the current base.
+func receiveSMTP(t *testing.T) (string, <-chan string) {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	host, port, err := net.SplitHostPort(listener.Addr().String())
+	require.NoError(t, err)
+	messages := make(chan string, 1)
+	done := make(chan struct{})
+	t.Cleanup(func() { _ = listener.Close(); <-done })
+	go func() {
+		defer close(done)
+		defer func() { _ = listener.Close() }()
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		_ = conn.SetDeadline(time.Now().Add(distrTestTimeout(20 * time.Second)))
+		wire := textproto.NewConn(conn)
+		if err := wire.PrintfLine("220 localhost"); err != nil {
+			return
+		}
+		for {
+			line, err := wire.ReadLine()
+			if err != nil {
+				return
+			}
+			switch {
+			case line == "DATA":
+				if err := wire.PrintfLine("354 Send message"); err != nil {
+					return
+				}
+				body, err := wire.ReadDotBytes()
+				if err != nil {
+					return
+				}
+				messages <- string(body)
+			case line == "QUIT":
+				_ = wire.PrintfLine("221 Bye")
+				return
+			case strings.HasPrefix(line, "EHLO "), strings.HasPrefix(line, "HELO "),
+				strings.HasPrefix(line, "MAIL FROM:"), strings.HasPrefix(line, "RCPT TO:"):
+			default:
+				t.Errorf("unexpected SMTP command: %s", line)
+				return
+			}
+			if err := wire.PrintfLine("250 OK"); err != nil {
+				return
+			}
+		}
+	}()
+	return fmt.Sprintf("smtp:\n  host: %s\n  port: %q\n", host, port), messages
+}
 
 func TestBaseConfig_EnvVarsExpandOnWorker(t *testing.T) {
 	t.Run("baseConfigEnvVarsExpanded", func(t *testing.T) {

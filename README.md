@@ -745,6 +745,16 @@ JSON or text format logging (`DAGU_LOG_FORMAT`). Logs are stored per-run with se
 - Per-DAG webhook endpoints with token authentication
 - Delivery requires the event store, notification store, and writable notification state store
 
+SMTP inherited from global or workspace `base.yaml` is omitted from new run
+snapshots (`dag.json`). Retries, restarts, and queued runs use the current base
+SMTP configuration. Removing it disables email notifications unless the original
+DAG defines SMTP. Other base settings and the original DAG YAML remain captured.
+
+SMTP written directly in DAG YAML, values stored in `env`, distributed task
+payloads, and workspace bundles are still retained. Existing history files and
+backups are not rewritten. Upgrade processes that read run snapshots (CLI, API,
+and scheduler) together so retries can reload base SMTP.
+
 Scoped notification routing is broken in v2.11.0-v2.11.2. Use v2.11.3 or later.
 
 ## Artifacts
