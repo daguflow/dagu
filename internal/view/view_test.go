@@ -4,6 +4,7 @@
 package view_test
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -102,7 +103,16 @@ func TestView_ValidateRunRejectsInvalidFields(t *testing.T) {
 		{"workspace scope without workspace", func(v *view.View) { v.WorkspaceScope = view.WorkspaceScopeWorkspace }, view.ErrInvalidWorkspaceScope},
 		{"dagRunId too long", func(v *view.View) { v.DAGRunID = strings.Repeat("r", view.MaxDAGRunIDLength+1) }, view.ErrDAGRunIDTooLong},
 		{"runStatus not a status", func(v *view.View) { v.RunStatus = "failed" }, view.ErrInvalidRunStatus},
+		{"runStatus out of range", func(v *view.View) { v.RunStatus = "9" }, view.ErrInvalidRunStatus},
 		{"runStatus too long", func(v *view.View) { v.RunStatus = strings.Repeat("s", view.MaxRunStatusLength+1) }, view.ErrRunStatusTooLong},
+		{"specific value not a date", func(v *view.View) { v.DateMode = view.DateModeSpecific; v.SpecificValue = "not-a-date" }, view.ErrInvalidSpecificValue},
+		{"specific month value malformed", func(v *view.View) {
+			v.DateMode = view.DateModeSpecific
+			v.SpecificPeriod = view.SpecificPeriodMonth
+			v.SpecificValue = "2026-09-15"
+		}, view.ErrInvalidSpecificValue},
+		{"custom start not a datetime", func(v *view.View) { v.DateMode = view.DateModeCustom; v.FromDate = "2026/09/15" }, view.ErrInvalidDate},
+		{"custom end not a datetime", func(v *view.View) { v.DateMode = view.DateModeCustom; v.ToDate = "tomorrow" }, view.ErrInvalidDate},
 		{"unknown date mode", func(v *view.View) { v.DateMode = "week" }, view.ErrInvalidDateMode},
 		{"unknown date preset", func(v *view.View) { v.DatePreset = "tomorrow" }, view.ErrInvalidDatePreset},
 		{"unknown specific period", func(v *view.View) { v.SpecificPeriod = "week" }, view.ErrInvalidSpecificPeriod},
@@ -130,6 +140,53 @@ func TestView_NormalizeRunDefaults(t *testing.T) {
 	assert.Equal(t, view.DatePresetToday, v.DatePreset)
 	assert.Equal(t, view.SpecificPeriodDate, v.SpecificPeriod)
 	require.NoError(t, v.Validate())
+}
+
+func TestView_RunSpecificValues(t *testing.T) {
+	okValues := []struct {
+		period string
+		value  string
+	}{
+		{view.SpecificPeriodDate, "2026-09-15"},
+		{view.SpecificPeriodMonth, "2026-09"},
+		{view.SpecificPeriodYear, "2026"},
+	}
+	for _, tt := range okValues {
+		assert.True(t, view.ValidRunSpecificValue(tt.period, tt.value), tt)
+	}
+
+	badValues := []struct {
+		period string
+		value  string
+	}{
+		{view.SpecificPeriodDate, "2026-13-40"},
+		{view.SpecificPeriodDate, "September 15"},
+		{view.SpecificPeriodMonth, "2026-9"},
+		{view.SpecificPeriodMonth, "2026-09-15"},
+		{view.SpecificPeriodYear, "26"},
+		{view.SpecificPeriodDate, ""},
+	}
+	for _, tt := range badValues {
+		assert.False(t, view.ValidRunSpecificValue(tt.period, tt.value), tt)
+	}
+}
+
+func TestView_RunDateStrings(t *testing.T) {
+	assert.True(t, view.ValidRunDateString(""))
+	assert.True(t, view.ValidRunDateString("2026-09-15T00:00"))
+	assert.True(t, view.ValidRunDateString("2026-09-15T00:00:00"))
+	assert.False(t, view.ValidRunDateString("2026-09-15"))
+	assert.False(t, view.ValidRunDateString("tomorrow"))
+}
+
+func TestView_RunStatusBounds(t *testing.T) {
+	for status := view.MinRunStatusCode; status <= view.MaxRunStatusCode; status++ {
+		assert.True(t, view.ValidRunStatus(strconv.Itoa(status)), status)
+	}
+	assert.True(t, view.ValidRunStatus(view.RunStatusAll))
+	assert.False(t, view.ValidRunStatus("9"))
+	assert.False(t, view.ValidRunStatus("-1"))
+	assert.False(t, view.ValidRunStatus("all-runs"))
 }
 
 func TestView_Validate_Errors(t *testing.T) {

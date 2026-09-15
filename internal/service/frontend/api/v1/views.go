@@ -149,6 +149,9 @@ func (a *API) UpdateView(ctx context.Context, request api.UpdateViewRequestObjec
 	}
 
 	updated := viewFromSpec(*request.Body)
+	if request.Body.Workspace == nil {
+		updated.Workspace = existing.Workspace
+	}
 	if request.Body.Columns == nil {
 		updated.Columns = slices.Clone(existing.Columns)
 	}

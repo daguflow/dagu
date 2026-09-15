@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -86,6 +87,13 @@ const (
 	MaxDateLength          = 32
 )
 
+// Run status bounds mirror the execution lifecycle statuses: NotStarted (0)
+// through Rejected (8).
+const (
+	MinRunStatusCode = 0
+	MaxRunStatusCode = 8
+)
+
 // Sentinel errors returned by views and their stores.
 var (
 	ErrInvalidViewID         = errors.New("view: invalid id")
@@ -104,10 +112,12 @@ var (
 	ErrDAGRunIDTooLong       = errors.New("view: dagRunId too long")
 	ErrInvalidRunStatus      = errors.New("view: invalid run status")
 	ErrRunStatusTooLong      = errors.New("view: runStatus too long")
+	ErrInvalidSpecificValue  = errors.New("view: invalid specific value")
 	ErrInvalidDateMode       = errors.New("view: invalid date mode")
 	ErrInvalidDatePreset     = errors.New("view: invalid date preset")
 	ErrInvalidSpecificPeriod = errors.New("view: invalid specific period")
 	ErrSpecificValueTooLong  = errors.New("view: specific value too long")
+	ErrInvalidDate           = errors.New("view: invalid date")
 	ErrDateTooLong           = errors.New("view: date too long")
 	ErrViewChanged           = errors.New("view: changed")
 )
@@ -266,6 +276,10 @@ func (v *View) Validate() error {
 			return ErrInvalidSpecificPeriod
 		case len([]rune(v.SpecificValue)) > MaxSpecificValueLength:
 			return ErrSpecificValueTooLong
+		case v.DateMode == DateModeSpecific && !ValidRunSpecificValue(v.SpecificPeriod, v.SpecificValue):
+			return ErrInvalidSpecificValue
+		case v.DateMode == DateModeCustom && (!ValidRunDateString(v.FromDate) || !ValidRunDateString(v.ToDate)):
+			return ErrInvalidDate
 		case len([]rune(v.FromDate)) > MaxDateLength || len([]rune(v.ToDate)) > MaxDateLength:
 			return ErrDateTooLong
 		}
@@ -317,20 +331,51 @@ func ValidType(t string) bool {
 }
 
 // ValidRunStatus reports whether status is a supported run status: the
-// wildcard "all" or a numeric status code.
+// wildcard "all" or a numeric status code within the execution lifecycle
+// range [MinRunStatusCode, MaxRunStatusCode].
 func ValidRunStatus(status string) bool {
 	if status == RunStatusAll {
 		return true
 	}
-	if status == "" || len(status) > 9 {
+	n, err := strconv.Atoi(status)
+	if err != nil {
 		return false
 	}
-	for _, r := range status {
-		if r < '0' || r > '9' {
-			return false
+	return n >= MinRunStatusCode && n <= MaxRunStatusCode
+}
+
+// ValidRunSpecificValue reports whether value matches the granularity of
+// period: a date (YYYY-MM-DD), month (YYYY-MM), or year (YYYY). Periods the
+// caller does not recognize are not the concern of this checker, so they
+// count as valid to avoid masking an invalid-period error.
+func ValidRunSpecificValue(period string, value string) bool {
+	var layout string
+	switch period {
+	case SpecificPeriodDate:
+		layout = "2006-01-02"
+	case SpecificPeriodMonth:
+		layout = "2006-01"
+	case SpecificPeriodYear:
+		layout = "2006"
+	default:
+		return true
+	}
+	_, err := time.Parse(layout, value)
+	return err == nil
+}
+
+// ValidRunDateString reports whether value is empty or a datetime-local
+// string (YYYY-MM-DDTHH:mm, optionally with seconds).
+func ValidRunDateString(value string) bool {
+	if value == "" {
+		return true
+	}
+	for _, layout := range []string{"2006-01-02T15:04", "2006-01-02T15:04:05"} {
+		if _, err := time.Parse(layout, value); err == nil {
+			return true
 		}
 	}
-	return true
+	return false
 }
 
 // ValidRunDateMode reports whether mode is a supported Executions page date

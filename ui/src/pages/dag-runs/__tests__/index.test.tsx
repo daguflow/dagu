@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import dayjs from 'dayjs';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
@@ -542,6 +543,38 @@ describe('DAGRuns page', () => {
       expect(screen.getByPlaceholderText('Filter by DAG name...')).toHaveValue(
         'deploy'
       );
+    });
+  });
+
+  it('restores concrete dates from a legacy URL without dateMode', async () => {
+    renderPage(
+      vi.fn(),
+      '/dag-runs?fromDate=2026-09-01T00%3A00&toDate=2026-09-15T23%3A59'
+    );
+
+    await waitFor(() => {
+      expect(lastRunQuery()['fromDate']).toBe(dayjs('2026-09-01T00:00').unix());
+      expect(lastRunQuery()['toDate']).toBe(dayjs('2026-09-15T23:59').unix());
+    });
+  });
+
+  it('ignores stale concrete dates for preset views and derives them fresh', async () => {
+    sharedRunViewState.views.push(
+      makeRunView({
+        dagName: 'deploy',
+        dateMode: RunDateMode.preset,
+        datePreset: RunDatePreset.today,
+      })
+    );
+
+    renderPage(
+      vi.fn(),
+      '/dag-runs?view=failed-runs&dateMode=preset&preset=today&fromDate=2026-01-01T00%3A00'
+    );
+
+    await waitFor(() => {
+      expect(lastRunQuery()['fromDate']).toBe(dayjs().startOf('day').unix());
+      expect(lastRunQuery()['name']).toBe('deploy');
     });
   });
 

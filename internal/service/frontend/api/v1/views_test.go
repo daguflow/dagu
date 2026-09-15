@@ -419,6 +419,37 @@ func TestViewsAPI_UpdatePreservesOmittedRunSettings(t *testing.T) {
 	assert.True(t, *updated.IsDefault)
 }
 
+func TestViewsAPI_UpdatePreservesOmittedWorkspace(t *testing.T) {
+	ctx := context.Background()
+	api := newViewsTestAPI(t)
+	viewType := apigen.ViewSpecTypeWorkflow
+	workspaceScope := apigen.ViewWorkspaceScopeWorkspace
+	workspace := "prod"
+	created := mustCreateView(t, api, ctx, apigen.ViewSpec{
+		Name:           "Before",
+		Type:           &viewType,
+		IntervalDays:   1,
+		Workspace:      &workspace,
+		WorkspaceScope: &workspaceScope,
+	})
+
+	resp, err := api.UpdateView(ctx, apigen.UpdateViewRequestObject{
+		ViewId: created.Id,
+		Body: &apigen.ViewSpec{
+			Name:         "After",
+			Type:         &viewType,
+			IntervalDays: 1,
+		},
+	})
+	require.NoError(t, err)
+	updated, ok := resp.(apigen.UpdateView200JSONResponse)
+	require.True(t, ok, "expected 200, got %T", resp)
+	require.NotNil(t, updated.Workspace)
+	assert.Equal(t, workspace, *updated.Workspace, "omitted workspace keeps the existing scope")
+	require.NotNil(t, updated.WorkspaceScope)
+	assert.Equal(t, workspaceScope, *updated.WorkspaceScope)
+}
+
 func TestViewsAPI_UpdateNotFound(t *testing.T) {
 	resp, err := newViewsTestAPI(t).UpdateView(context.Background(), apigen.UpdateViewRequestObject{
 		ViewId: "missing",

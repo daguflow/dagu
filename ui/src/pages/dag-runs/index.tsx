@@ -583,12 +583,16 @@ function DAGRuns() {
 
     // Concrete dates are only meaningful for a custom range; preset and
     // specific modes keep their relative parameters and derive dates fresh.
-    if (params.has('fromDate') && dateModeParam === 'custom') {
+    // Legacy URLs may carry concrete dates without a dateMode at all, which
+    // remain honored.
+    const usesConcreteDates =
+      dateModeParam === 'custom' || dateModeParam === null;
+    if (usesConcreteDates && params.has('fromDate')) {
       urlFilters.fromDate = parseDateFromUrl(params.get('fromDate'));
       hasUrlFilters = true;
     }
 
-    if (params.has('toDate') && dateModeParam === 'custom') {
+    if (usesConcreteDates && params.has('toDate')) {
       urlFilters.toDate = parseDateFromUrl(params.get('toDate'));
       hasUrlFilters = true;
     }
