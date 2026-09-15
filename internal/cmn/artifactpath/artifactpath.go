@@ -94,8 +94,38 @@ func DayDir(root string, at time.Time) string {
 // MetaPath returns the sidecar path for runDir. The sidecar always lives in the
 // global tree under root, even when runDir itself sits under a DAG-level
 // override, so that one date walk sees every run.
-func MetaPath(root, runDir string, at time.Time) string {
-	return filepath.Join(DayDir(root, at), filepath.Base(runDir)+MetaSuffix)
+//
+// The day is taken from runDir rather than recomputed, because a run's
+// directory is created once and the clock has moved on by the time its status
+// is recorded. It reports false for a directory that predates this layout.
+func MetaPath(root, runDir string) (string, bool) {
+	day, name, ok := SplitRunDir(runDir)
+	if !ok {
+		return "", false
+	}
+	return filepath.Join(root, filepath.FromSlash(day), name+MetaSuffix), true
+}
+
+// SplitRunDir separates a per-run artifact directory into its "YYYY/MM/DD" day
+// and its directory name.
+func SplitRunDir(runDir string) (day, name string, ok bool) {
+	cleaned := filepath.Clean(runDir)
+	name = filepath.Base(cleaned)
+	if _, ok := ParseRunDirName(name); !ok {
+		return "", "", false
+	}
+
+	parts := strings.Split(filepath.ToSlash(cleaned), "/")
+	if len(parts) < 4 {
+		return "", "", false
+	}
+	year, month, dayOfMonth := parts[len(parts)-4], parts[len(parts)-3], parts[len(parts)-2]
+	if len(year) != 4 || !isDigits(year) ||
+		len(month) != 2 || !isDigits(month) ||
+		len(dayOfMonth) != 2 || !isDigits(dayOfMonth) {
+		return "", "", false
+	}
+	return year + "/" + month + "/" + dayOfMonth, name, true
 }
 
 // IsMetaName reports whether name addresses a sidecar file.

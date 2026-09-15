@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dagucloud/dagu/v2/internal/cmn/artifactpath"
 	"github.com/dagucloud/dagu/v2/internal/cmn/fileutil"
 	"github.com/dagucloud/dagu/v2/internal/cmn/logger"
 	"github.com/dagucloud/dagu/v2/internal/cmn/logger/tag"
@@ -152,7 +153,7 @@ func (dr DAGRun) CreateAttempt(_ context.Context, ts persis.TimeInUTC, cache *fi
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create the run directory: %w", err)
 	}
-	return NewAttempt(filepath.Join(dir, JSONLStatusFile), cache)
+	return NewAttempt(filepath.Join(dir, JSONLStatusFile), cache, WithArtifactRoot(dr.artifactDir))
 }
 
 // CreateSubDAGRun creates a new sub dag-run with the given timestamp and dag-run ID.
@@ -240,7 +241,7 @@ func (dr DAGRun) LatestAttempt(ctx context.Context, cache *fileutil.Cache[*ir.DA
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		att, err := NewAttempt(filepath.Join(dr.baseDir, attDir, JSONLStatusFile), cache)
+		att, err := NewAttempt(filepath.Join(dr.baseDir, attDir, JSONLStatusFile), cache, WithArtifactRoot(dr.artifactDir))
 		if err != nil {
 			logger.Error(ctx, "Failed to read a run data", tag.Error(err))
 			continue
@@ -258,7 +259,7 @@ func (dr DAGRun) LatestAttempt(ctx context.Context, cache *fileutil.Cache[*ir.DA
 // AttemptByDir constructs an Attempt directly from a known attempt directory name,
 // skipping the directory listing and sorting done by LatestAttempt.
 func (dr DAGRun) AttemptByDir(attemptDir string, cache *fileutil.Cache[*ir.DAGRunStatus]) (*Attempt, error) {
-	return NewAttempt(filepath.Join(dr.baseDir, attemptDir, JSONLStatusFile), cache)
+	return NewAttempt(filepath.Join(dr.baseDir, attemptDir, JSONLStatusFile), cache, WithArtifactRoot(dr.artifactDir))
 }
 
 // Remove deletes the entire dag-run directory and all its contents.
@@ -344,7 +345,27 @@ func (dr DAGRun) removeLogFiles(ctx context.Context) error {
 				tag.Dir(validDir))
 			continue
 		}
-		parentDirs[filepath.Dir(validDir)] = struct{}{}
+		dr.collectArtifactAncestors(validDir, parentDirs)
+
+		// The index record is a sibling of the artifact directory, and lives in
+		// the global tree even when the DAG relocated its artifacts, so it is
+		// removed separately rather than by the RemoveAll above.
+		metaPath, ok := artifactpath.MetaPath(dr.artifactDir, dir)
+		if !ok {
+			continue
+		}
+		validMeta, ok := dr.validatedArtifactDir(metaPath)
+		if !ok {
+			continue
+		}
+		if err := fileutil.Remove(validMeta); err != nil && !errors.Is(err, os.ErrNotExist) {
+			logger.Error(ctx, "Failed to remove artifact index record",
+				tag.Error(err),
+				tag.RunID(dr.dagRunID),
+				tag.File(validMeta))
+			continue
+		}
+		dr.collectArtifactAncestors(validMeta, parentDirs)
 	}
 
 	// Remove deepest directories first so their ancestors can become empty.
@@ -360,6 +381,24 @@ func (dr DAGRun) removeLogFiles(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// collectArtifactAncestors records every directory between path and the
+// artifact root so the prune below can drop date directories that a removal
+// left empty.
+func (dr DAGRun) collectArtifactAncestors(path string, into map[string]struct{}) {
+	for {
+		parent := filepath.Dir(path)
+		if parent == path {
+			return
+		}
+		valid, ok := dr.validatedArtifactDir(parent)
+		if !ok {
+			return
+		}
+		into[valid] = struct{}{}
+		path = parent
+	}
 }
 
 func uniquePaths(paths []string) map[string]struct{} {

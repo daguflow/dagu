@@ -147,9 +147,9 @@ func TestMetaPath(t *testing.T) {
 		dir, err := artifactpath.NewRunDir(context.Background(), base, "", "report", "run-1", testTime)
 		require.NoError(t, err)
 
-		meta := artifactpath.MetaPath(base, dir, testTime)
-		assert.Equal(t, filepath.Dir(dir), filepath.Dir(meta))
-		assert.Equal(t, filepath.Base(dir)+artifactpath.MetaSuffix, filepath.Base(meta))
+		meta, ok := artifactpath.MetaPath(base, dir)
+		require.True(t, ok)
+		assert.Equal(t, dir+artifactpath.MetaSuffix, meta)
 	})
 
 	t.Run("OverriddenRunDirKeepsGlobalSidecar", func(t *testing.T) {
@@ -160,10 +160,38 @@ func TestMetaPath(t *testing.T) {
 		dir, err := artifactpath.NewRunDir(context.Background(), base, override, "report", "run-1", testTime)
 		require.NoError(t, err)
 
-		meta := artifactpath.MetaPath(base, dir, testTime)
+		meta, ok := artifactpath.MetaPath(base, dir)
+		require.True(t, ok)
 		assert.Equal(t, artifactpath.DayDir(base, testTime), filepath.Dir(meta))
 		assert.Equal(t, filepath.Base(dir)+artifactpath.MetaSuffix, filepath.Base(meta))
 	})
+
+	// A run directory written before this layout has no place in the date tree,
+	// which is what keeps pre-existing runs out of the listing.
+	t.Run("RejectsLegacyLayout", func(t *testing.T) {
+		t.Parallel()
+
+		_, ok := artifactpath.MetaPath("/artifacts",
+			filepath.Join("/artifacts", "my-dag", "dag-run_20260915_143207Z_run-1"))
+		assert.False(t, ok)
+	})
+
+	t.Run("RejectsShallowPath", func(t *testing.T) {
+		t.Parallel()
+
+		_, ok := artifactpath.MetaPath("/artifacts", filepath.Join("/", "143207_dag_a7f3c2"))
+		assert.False(t, ok)
+	})
+}
+
+func TestSplitRunDir(t *testing.T) {
+	t.Parallel()
+
+	day, name, ok := artifactpath.SplitRunDir(
+		filepath.Join("/artifacts", "2026", "09", "15", "143207_report_a7f3c2"))
+	require.True(t, ok)
+	assert.Equal(t, "2026/09/15", day)
+	assert.Equal(t, "143207_report_a7f3c2", name)
 }
 
 func TestParseRunDirName(t *testing.T) {
