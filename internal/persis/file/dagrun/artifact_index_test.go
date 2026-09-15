@@ -216,6 +216,25 @@ func TestArtifactIndexRemoval(t *testing.T) {
 		assert.DirExists(t, f.artifactRoot)
 	})
 
+	// Artifacts relocated outside the trusted root are left alone, but their
+	// index record lives in the root and must go, or the listing keeps
+	// reporting a run that was deleted.
+	t.Run("RemovesRecordForRelocatedArtifacts", func(t *testing.T) {
+		f := newArtifactIndexFixture(t)
+		override := filepath.Join(f.th.TmpDir, "elsewhere")
+		dir := f.runDir(t, override, "run-1", true)
+		f.write(t, "run-1", ir.Succeeded, dir, false)
+
+		metaPath, ok := artifactpath.MetaPath(f.artifactRoot, dir)
+		require.True(t, ok)
+		require.FileExists(t, metaPath)
+
+		require.NoError(t, f.th.Repository.RemoveDAGRun(
+			f.th.Context, ir.NewDAGRunRef(f.dag.Name, "run-1"), persis.DAGRunRemoveOptions{}))
+
+		assert.NoFileExists(t, metaPath)
+	})
+
 	t.Run("KeepsDateDirsThatStillHoldRuns", func(t *testing.T) {
 		f := newArtifactIndexFixture(t)
 		kept := f.runDir(t, f.artifactRoot, "run-keep", true)

@@ -330,6 +330,11 @@ func (dr DAGRun) removeLogFiles(ctx context.Context) error {
 		parentDirs[filepath.Dir(file)] = struct{}{}
 	}
 	for dir := range uniqueArtifactDirs {
+		// The index record always lives in the trusted root, even when the DAG
+		// relocated its artifacts elsewhere, so it is removed independently of
+		// whether the directory it describes can be.
+		dr.removeArtifactRecord(ctx, dir, parentDirs)
+
 		validDir, ok := dr.validatedArtifactDir(dir)
 		if !ok {
 			logger.Warn(ctx, "Skipping artifact directory outside trusted artifact root",
@@ -346,26 +351,6 @@ func (dr DAGRun) removeLogFiles(ctx context.Context) error {
 			continue
 		}
 		dr.collectArtifactAncestors(validDir, parentDirs)
-
-		// The index record is a sibling of the artifact directory, and lives in
-		// the global tree even when the DAG relocated its artifacts, so it is
-		// removed separately rather than by the RemoveAll above.
-		metaPath, ok := artifactpath.MetaPath(dr.artifactDir, dir)
-		if !ok {
-			continue
-		}
-		validMeta, ok := dr.validatedArtifactDir(metaPath)
-		if !ok {
-			continue
-		}
-		if err := fileutil.Remove(validMeta); err != nil && !errors.Is(err, os.ErrNotExist) {
-			logger.Error(ctx, "Failed to remove artifact index record",
-				tag.Error(err),
-				tag.RunID(dr.dagRunID),
-				tag.File(validMeta))
-			continue
-		}
-		dr.collectArtifactAncestors(validMeta, parentDirs)
 	}
 
 	// Remove deepest directories first so their ancestors can become empty.
@@ -381,6 +366,27 @@ func (dr DAGRun) removeLogFiles(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// removeArtifactRecord deletes a run's entry from the artifact index so a
+// deleted run stops appearing in artifact listings.
+func (dr DAGRun) removeArtifactRecord(ctx context.Context, artifactDir string, parentDirs map[string]struct{}) {
+	metaPath, ok := artifactpath.MetaPath(dr.artifactDir, artifactDir)
+	if !ok {
+		return
+	}
+	validMeta, ok := dr.validatedArtifactDir(metaPath)
+	if !ok {
+		return
+	}
+	if err := fileutil.Remove(validMeta); err != nil && !errors.Is(err, os.ErrNotExist) {
+		logger.Error(ctx, "Failed to remove artifact index record",
+			tag.Error(err),
+			tag.RunID(dr.dagRunID),
+			tag.File(validMeta))
+		return
+	}
+	dr.collectArtifactAncestors(validMeta, parentDirs)
 }
 
 // collectArtifactAncestors records every directory between path and the
@@ -506,14 +512,11 @@ func (dr DAGRun) listArtifactDirs(ctx context.Context) ([]string, error) {
 				tag.AttemptID(attempt.ID()))
 			continue
 		}
-		if validDir, ok := dr.validatedArtifactDir(status.ArchiveDir); ok {
-			artifactDirs = append(artifactDirs, validDir)
-		} else if status.ArchiveDir != "" {
-			logger.Warn(ctx, "Skipping persisted artifact directory outside trusted artifact root",
-				tag.Dir(status.ArchiveDir),
-				tag.RunID(dr.dagRunID),
-				tag.AttemptID(attempt.ID()),
-			)
+		// Reported as recorded. Removal applies the trusted-root check itself,
+		// because a directory it must not delete can still have an index
+		// record that it must.
+		if status.ArchiveDir != "" {
+			artifactDirs = append(artifactDirs, status.ArchiveDir)
 		}
 	}
 
