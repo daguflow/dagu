@@ -313,6 +313,48 @@ func TestRetryScannerScanEnqueuesRetry(t *testing.T) {
 	queueStore.AssertExpectations(t)
 }
 
+func TestRetryScannerLeavesFailedRunWhenLivenessFails(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 14, 14, 0, 0, 0, time.UTC)
+	dag := &ir.DAG{
+		Name:     "retry-dag",
+		Location: "/tmp/retry-dag.yaml",
+		RetryPolicy: &ir.DAGRetryPolicy{
+			Limit:       3,
+			Interval:    time.Minute,
+			MaxInterval: 10 * time.Minute,
+		},
+	}
+	status := &ir.DAGRunStatus{
+		Name:         dag.Name,
+		DAGRunID:     "run-1",
+		AttemptID:    "att-1",
+		Status:       ir.Failed,
+		FinishedAt:   now.Add(-3 * time.Minute).Format(time.RFC3339),
+		ScheduleTime: now.Add(-10 * time.Minute).Format(time.RFC3339),
+	}
+	store := newRetryScannerStore(dag, status)
+	queueStore := &testutil.MockQueueStore{}
+
+	scanner, err := NewRetryScanner(
+		store.repository(),
+		queueStore,
+		nil,
+		24*time.Hour,
+		func() time.Time { return now },
+	)
+	require.NoError(t, err)
+	scanner.processes = retryScannerProcesses{err: errors.New("proc store unavailable")}
+
+	require.NoError(t, scanner.scan(context.Background()))
+
+	latest := store.mustStatus(status.DAGRun())
+	assert.Equal(t, ir.Failed, latest.Status)
+	assert.Equal(t, 0, latest.AutoRetryCount)
+	queueStore.AssertNotCalled(t, "Enqueue", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
 func TestRetryScannerScanSkipsDisabledRetryPolicy(t *testing.T) {
 	t.Parallel()
 
@@ -762,6 +804,14 @@ type retryScannerStore struct {
 	latestAttemptCalls int
 	listCalls          []persis.DAGRunStatusQuery
 	findAttemptCalls   int
+}
+
+type retryScannerProcesses struct {
+	err error
+}
+
+func (p retryScannerProcesses) IsAttemptAlive(context.Context, string, ir.DAGRunRef, string) (bool, error) {
+	return false, p.err
 }
 
 type retryScannerStoreEntry struct {

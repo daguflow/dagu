@@ -49,6 +49,7 @@ type Clock func() time.Time
 type processRepository interface {
 	queueProcessRepository
 	zombieProcessRepository
+	queuedomain.RunProcesses
 	CountAliveByDAGName(ctx context.Context, groupName, dagName string) (int, error)
 }
 
@@ -332,6 +333,7 @@ func newScheduler(
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize retry scanner: %w", err)
 	}
+	retryScanner.processes = procRepository
 
 	return &Scheduler{
 		quit:             make(chan any),

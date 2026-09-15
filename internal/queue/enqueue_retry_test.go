@@ -355,6 +355,76 @@ func TestEnqueueRetry(t *testing.T) {
 	}
 }
 
+func TestEnqueueRetryRejectsUnconfirmedSource(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		processes queue.RunProcesses
+	}{
+		{
+			name:      "LivenessUnavailable",
+			processes: retryRunProcesses{err: errors.New("proc store unavailable")},
+		},
+		{
+			name:      "SourceStillAlive",
+			processes: retryRunProcesses{alive: true},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			status := &ir.DAGRunStatus{
+				Name:      "test-dag",
+				DAGRunID:  "run-source",
+				AttemptID: "att-source",
+				Status:    ir.Failed,
+				ProcGroup: "test-queue",
+			}
+			backend := &stubDAGRunStore{status: cloneDAGRunStatus(status)}
+			queueStore := &recordingRetryQueueStore{}
+			repository := persis.NewDAGRunRepository(backend, nil, persis.DAGRunRepositoryOptions{})
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
+			defer cancel()
+
+			queued, err := queue.EnqueueRetry(
+				ctx,
+				repository,
+				queueStore,
+				&ir.DAG{Name: "test-dag", Queue: "test-queue"},
+				status,
+				queue.EnqueueRetryOptions{Processes: tt.processes},
+			)
+
+			require.Error(t, err)
+			assert.False(t, queued)
+			assert.Equal(t, ir.Failed, backend.status.Status)
+			assert.Zero(t, queueStore.enqueueCalls)
+		})
+	}
+}
+
+type retryRunProcesses struct {
+	alive bool
+	err   error
+}
+
+func (p retryRunProcesses) IsAttemptAlive(context.Context, string, ir.DAGRunRef, string) (bool, error) {
+	return p.alive, p.err
+}
+
+type recordingRetryQueueStore struct {
+	queue.QueueStore
+	enqueueCalls int
+}
+
+func (s *recordingRetryQueueStore) Enqueue(context.Context, string, queue.QueuePriority, ir.DAGRunRef) error {
+	s.enqueueCalls++
+	return nil
+}
+
 type stubDAGRunStore struct {
 	testutil.DAGRunStoreStub
 	status    *ir.DAGRunStatus

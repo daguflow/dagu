@@ -708,7 +708,6 @@ func TestQueueProcessorFinalizesLaunchFailure(t *testing.T) {
 func TestQueueProcessorPreservesRetryPublishedDuringFailureCleanup(t *testing.T) {
 	t.Parallel()
 
-	var hookedQueueStore *queueConditionQueueStore
 	f := newQueueConditionFixtureWithConfig(
 		t,
 		config.ExecutionModeLocal,
@@ -722,10 +721,6 @@ func TestQueueProcessorPreservesRetryPublishedDuringFailureCleanup(t *testing.T)
 					isRunAliveDelay:   50 * time.Millisecond,
 				}
 			},
-			queueStore: func(base queuedomain.QueueStore) queuedomain.QueueStore {
-				hookedQueueStore = &queueConditionQueueStore{QueueStore: base}
-				return hookedQueueStore
-			},
 		},
 	)
 	f.enqueueRun("waiting-run", nil)
@@ -735,8 +730,13 @@ func TestQueueProcessorPreservesRetryPublishedDuringFailureCleanup(t *testing.T)
 	originalItemID := items[0].ID()
 
 	runRef := ir.NewDAGRunRef(f.dag.Name, "waiting-run")
-	hookedQueueStore.beforeDelete = func(ctx context.Context) error {
-		attempt, err := f.dagRunRepository.FindAttempt(ctx, runRef)
+	f.dagRunRepository.setBeforeCompareAndSwap(func(ctx context.Context) error {
+		repository := persis.NewDAGRunRepository(
+			f.dagRunRepository.DAGRunStore,
+			nil,
+			persis.DAGRunRepositoryOptions{LatestStatusToday: false},
+		)
+		attempt, err := repository.FindAttempt(ctx, runRef)
 		if err != nil {
 			return err
 		}
@@ -744,7 +744,26 @@ func TestQueueProcessorPreservesRetryPublishedDuringFailureCleanup(t *testing.T)
 		if err != nil {
 			return err
 		}
-		queued, err := queuedomain.EnqueueRetry(ctx, f.dagRunRepository.repository, f.queueStore, f.dag, status, queuedomain.EnqueueRetryOptions{})
+		status.Status = ir.Failed
+		status.FinishedAt = time.Now().UTC().Format(time.RFC3339)
+		if err := attempt.Open(ctx); err != nil {
+			return err
+		}
+		if err := attempt.Write(ctx, *status); err != nil {
+			_ = attempt.Close(ctx)
+			return err
+		}
+		if err := attempt.Close(ctx); err != nil {
+			return err
+		}
+		queued, err := queuedomain.EnqueueRetry(
+			ctx,
+			repository,
+			f.queueStore,
+			f.dag,
+			status,
+			queuedomain.EnqueueRetryOptions{Processes: releasedRunProcesses{}},
+		)
 		if err != nil {
 			return err
 		}
@@ -752,7 +771,7 @@ func TestQueueProcessorPreservesRetryPublishedDuringFailureCleanup(t *testing.T)
 			return errors.New("retry was not queued")
 		}
 		return nil
-	}
+	})
 
 	f.processor.ProcessQueueItems(f.ctx, f.dag.Name)
 
@@ -1368,34 +1387,15 @@ func (s *fullListFailingQueueStore) List(context.Context, string) ([]queuedomain
 	return nil, errors.New("full queue listing disabled")
 }
 
-type queueConditionQueueStore struct {
-	queuedomain.QueueStore
-
-	once         sync.Once
-	beforeDelete func(context.Context) error
-}
-
-func (s *queueConditionQueueStore) DeleteByItemIDs(ctx context.Context, queueName string, itemIDs []string) (int, error) {
-	var hookErr error
-	s.once.Do(func() {
-		if s.beforeDelete != nil {
-			hookErr = s.beforeDelete(ctx)
-		}
-	})
-	if hookErr != nil {
-		return 0, hookErr
-	}
-	return s.QueueStore.DeleteByItemIDs(ctx, queueName, itemIDs)
-}
-
 type countingDAGRunStore struct {
 	persis.DAGRunStore
 	repository *persis.DAGRunRepository
 
-	mu                 sync.Mutex
-	casByRun           map[string]int
-	blankAttemptIDRuns map[string]struct{}
-	readDAGErrByRun    map[string]error
+	mu                       sync.Mutex
+	casByRun                 map[string]int
+	blankAttemptIDRuns       map[string]struct{}
+	readDAGErrByRun          map[string]error
+	beforeCompareAndSwapOnce func(context.Context) error
 }
 
 func newCountingDAGRunStore(store persis.DAGRunStore) *countingDAGRunStore {
@@ -1417,8 +1417,27 @@ func (s *countingDAGRunStore) CompareAndSwapLatestAttemptStatus(
 ) (*ir.DAGRunStatus, bool, error) {
 	s.mu.Lock()
 	s.casByRun[req.DAGRun.ID]++
+	before := s.beforeCompareAndSwapOnce
+	s.beforeCompareAndSwapOnce = nil
 	s.mu.Unlock()
+	if before != nil {
+		if err := before(ctx); err != nil {
+			return nil, false, err
+		}
+	}
 	return s.DAGRunStore.CompareAndSwapLatestAttemptStatus(ctx, req)
+}
+
+func (s *countingDAGRunStore) setBeforeCompareAndSwap(before func(context.Context) error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.beforeCompareAndSwapOnce = before
+}
+
+type releasedRunProcesses struct{}
+
+func (releasedRunProcesses) IsAttemptAlive(context.Context, string, ir.DAGRunRef, string) (bool, error) {
+	return false, nil
 }
 
 func (s *countingDAGRunStore) FindAttempt(ctx context.Context, dagRun ir.DAGRunRef) (dagrun.Attempt, error) {

@@ -37,6 +37,7 @@ type dagRetryMetadata struct {
 type RetryScanner struct {
 	dagRunRepository *persis.DAGRunRepository
 	queueStore       queuedomain.QueueStore
+	processes        queuedomain.RunProcesses
 	isSuspended      IsSuspendedFunc
 	retryWindow      time.Duration
 	clock            Clock
@@ -166,6 +167,7 @@ func (s *RetryScanner) processFailedRunFromSummary(
 
 	_, err = queuedomain.EnqueueRetry(ctx, s.dagRunRepository, s.queueStore, nil, listed, queuedomain.EnqueueRetryOptions{
 		AutoRetry: true,
+		Processes: s.processes,
 	})
 	if err != nil {
 		if errors.Is(err, queuedomain.ErrRetryStaleLatest) {
@@ -251,6 +253,7 @@ func (s *RetryScanner) processFailedRunLegacy(
 
 	_, err = queuedomain.EnqueueRetry(ctx, s.dagRunRepository, s.queueStore, dagSnapshot, latestStatus, queuedomain.EnqueueRetryOptions{
 		AutoRetry: true,
+		Processes: s.processes,
 	})
 	if err != nil {
 		if errors.Is(err, queuedomain.ErrRetryStaleLatest) {

@@ -9,9 +9,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dagucloud/dagu/v2/internal/cmn/logger"
-	"github.com/dagucloud/dagu/v2/internal/cmn/logger/tag"
-	"github.com/dagucloud/dagu/v2/internal/cmn/stringutil"
 	"github.com/dagucloud/dagu/v2/internal/ir"
 	"github.com/dagucloud/dagu/v2/internal/persis"
 )
@@ -47,20 +44,18 @@ type EnqueueRetryOptions struct {
 // awaitSourceRelease gives the execution that recorded status a moment to let
 // go of the dag-run. Its closing status write would otherwise land after this
 // enqueue, return the run to its finished status, and strand the queue item.
-// The wait is bounded: a process that holds the run longer than that keeps the
-// previous behavior of enqueueing regardless.
-func awaitSourceRelease(ctx context.Context, processes RunProcesses, dag *ir.DAG, status *ir.DAGRunStatus) {
+func awaitSourceRelease(ctx context.Context, processes RunProcesses, dag *ir.DAG, status *ir.DAGRunStatus) error {
 	procGroup := retryProcGroup(dag, status)
 	if processes == nil || procGroup == "" || status.AttemptID == "" {
-		return
+		return nil
 	}
 	// Only a finished run has a closing write left to land.
 	if status.Status == ir.NotStarted || status.Status.IsActive() {
-		return
+		return nil
 	}
 	dagRun := status.DAGRun()
 	if dagRun.ID == "" {
-		return
+		return nil
 	}
 	waitCtx, cancel := context.WithTimeout(ctx, sourceReleaseTimeout)
 	defer cancel()
@@ -69,18 +64,14 @@ func awaitSourceRelease(ctx context.Context, processes RunProcesses, dag *ir.DAG
 	for {
 		alive, err := processes.IsAttemptAlive(waitCtx, procGroup, dagRun, status.AttemptID)
 		if err != nil {
-			logger.Warn(ctx, "Failed to check whether the previous dag-run is still finalizing",
-				tag.DAG(dagRun.Name), tag.RunID(dagRun.ID), tag.Error(err))
-			return
+			return fmt.Errorf("check whether previous dag-run %s is still finalizing: %w", dagRun, err)
 		}
 		if !alive {
-			return
+			return nil
 		}
 		select {
 		case <-waitCtx.Done():
-			logger.Warn(ctx, "Previous dag-run is still finalizing; enqueueing the retry anyway",
-				tag.DAG(dagRun.Name), tag.RunID(dagRun.ID))
-			return
+			return fmt.Errorf("previous dag-run %s is still finalizing: %w", dagRun, waitCtx.Err())
 		case <-ticker.C:
 		}
 	}
@@ -109,7 +100,9 @@ func EnqueueRetry(
 	if status.Status == ir.Queued {
 		return false, nil
 	}
-	awaitSourceRelease(ctx, opts.Processes, dag, status)
+	if err := awaitSourceRelease(ctx, opts.Processes, dag, status); err != nil {
+		return false, fmt.Errorf("enqueue retry: %w", err)
+	}
 
 	dagRun := status.DAGRun()
 	var originalStatus *ir.DAGRunStatus
@@ -123,7 +116,7 @@ func EnqueueRetry(
 			originalStatus = &snapshot
 			now := time.Now()
 			latest.Status = ir.Queued
-			latest.QueuedAt = stringutil.FormatTime(now)
+			latest.QueuedAt = nextRetryQueuedAt(latest.QueuedAt, now)
 			latest.Conditions = nil
 			latest.TriggerType = ir.TriggerTypeRetry
 			if opts.TriggerActor != nil {
@@ -166,6 +159,15 @@ func EnqueueRetry(
 		return false, fmt.Errorf("enqueue retry: %w; rollback queued retry status: %w", enqueueErr, rollbackErr)
 	}
 	return false, fmt.Errorf("enqueue retry: %w", enqueueErr)
+}
+
+func nextRetryQueuedAt(previous string, now time.Time) string {
+	now = now.UTC()
+	queuedAt := now.Format(time.RFC3339Nano)
+	if queuedAt == previous {
+		queuedAt = now.Add(time.Nanosecond).Format(time.RFC3339Nano)
+	}
+	return queuedAt
 }
 
 func rollbackQueuedRetry(
