@@ -184,7 +184,8 @@ steps:
 		require.Equal(t, ir.TriggerTypeRetry, latestStatus.TriggerType)
 	})
 
-	t.Run("QueuedRetryDoesNotWaitForTerminalSourceProc", func(t *testing.T) {
+	// A queued retry must not publish a state that the source can overwrite.
+	t.Run("QueuedRetryRejectsLiveSource", func(t *testing.T) {
 		const dagName = "queued-retry-live-source-dag"
 		th := test.SetupCommand(t, test.WithConfigMutator(func(cfg *config.Config) {
 			cfg.Queues = config.Queues{
@@ -233,16 +234,17 @@ steps:
 		})
 
 		args := []string{"retry", fmt.Sprintf("--run-id=%s", runID), dagFile.Location}
-		th.RunCommand(t, cmd.Retry(), test.CmdTest{Args: args})
+		err = th.RunCommandWithError(t, cmd.Retry(), test.CmdTest{Args: args})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "is still finalizing")
 
 		items, err := th.QueueStore.List(th.Context, dagFile.ProcGroup())
 		require.NoError(t, err)
-		require.Len(t, items, 1)
+		require.Empty(t, items)
 
-		queuedStatus, err := attempt.ReadStatus(th.Context)
+		failedStatus, err := attempt.ReadStatus(th.Context)
 		require.NoError(t, err)
-		require.Equal(t, ir.Queued, queuedStatus.Status)
-		require.Equal(t, ir.TriggerTypeRetry, queuedStatus.TriggerType)
+		require.Equal(t, ir.Failed, failedStatus.Status)
 	})
 
 	t.Run("QueueDispatchRetryTreatsMissingRunAsStaleDispatch", func(t *testing.T) {

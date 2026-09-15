@@ -3122,7 +3122,7 @@ func (a *API) enqueueRetry(ctx context.Context, attempt dagrun.Attempt, dag *ir.
 		return fmt.Errorf("error reading status: %w", err)
 	}
 	eventCtx := a.withEventContext(ctx)
-	opts := queue.EnqueueRetryOptions{}
+	opts := queue.EnqueueRetryOptions{Processes: a.procRepository}
 	if actor := triggerActorFromContext(ctx); actor != "" {
 		opts.TriggerActor = &actor
 	}

@@ -577,3 +577,75 @@ func retryScanReferenceMidnight(now time.Time) time.Time {
 	}
 	return midnight
 }
+
+// A queued retry must run the steps that failed again rather than report their
+// recorded result a second time.
+func TestQueuedRetryRunsFailedStepAgain(t *testing.T) {
+	dir := t.TempDir()
+	attempts := test.ShellPath(filepath.Join(dir, "attempts"))
+	gate := test.ShellPath(filepath.Join(dir, "gate"))
+	work := test.ForOS(
+		fmt.Sprintf("printf 'x' >> %s; [ -f %s ] && exit 0; exit 7",
+			test.PosixQuote(attempts), test.PosixQuote(gate)),
+		fmt.Sprintf("Add-Content -Path %s -Value 'x' -NoNewline; if (Test-Path %s) { exit 0 }; exit 7",
+			test.PowerShellQuote(attempts), test.PowerShellQuote(gate)),
+	)
+	f := newFixture(t, fmt.Sprintf(`
+type: graph
+name: retry-rerun-dag
+queue: retry-rerun-queue
+steps:
+  - id: work
+    run: %q
+`, work), WithQueue("retry-rerun-queue"), WithGlobalQueue("retry-rerun-queue", 1))
+
+	f.Enqueue(1).StartScheduler(60 * time.Second)
+	defer f.Stop()
+	runID := f.runIDs[0]
+	f.WaitForStatus(runID, ir.Failed, 25*time.Second)
+	require.Equal(t, "x", readFileContent(t, filepath.Join(dir, "attempts")))
+
+	// The step succeeds from here on, so a retry that runs it reaches success.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "gate"), []byte("open"), 0600))
+	f.RetryEnqueue(runID)
+
+	f.WaitForStatus(runID, ir.Succeeded, 25*time.Second)
+	assert.Equal(t, "xx", readFileContent(t, filepath.Join(dir, "attempts")))
+}
+
+// A DAG that takes its queue from base.yaml rather than its own YAML still has
+// its scheduled runs paced by that queue.
+func TestScheduledRunJoinsQueueFromBaseConfig(t *testing.T) {
+	f := newFixture(t, `
+type: graph
+name: base-queue-schedule-dag
+schedule: "* * * * *"
+steps:
+  - id: work
+    run: echo scheduled
+`, WithQueue("base-pool"), WithGlobalQueue("base-pool", 1))
+	require.NoError(t, os.WriteFile(f.th.Config.Paths.BaseConfig, []byte("queue: base-pool\n"), 0600))
+
+	f.StartScheduler(3 * time.Minute)
+	defer f.Stop()
+
+	var latest ir.DAGRunStatus
+	f.h.Wait.EventuallyEveryWithin("expected a scheduled run to finish", queueTestTimeout(140*time.Second), time.Second, func() bool {
+		status, err := f.th.DAGRunMgr.GetLatestStatus(f.th.Context, f.dag)
+		if err != nil || status.Status != ir.Succeeded {
+			return false
+		}
+		latest = status
+		return true
+	})
+	assert.Equal(t, ir.TriggerTypeScheduler, latest.TriggerType)
+	// Only a run the queue admitted records when it was queued.
+	assert.NotEmpty(t, latest.QueuedAt, "a scheduled run of a queued DAG must wait in its queue")
+}
+
+func readFileContent(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	return string(data)
+}

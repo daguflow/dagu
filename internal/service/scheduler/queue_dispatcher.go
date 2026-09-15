@@ -150,7 +150,10 @@ const (
 	queuedConditionRefreshBatchLimit = 100
 )
 
-var errQueuedConditionFresh = errors.New("queued condition is already fresh")
+var (
+	errQueuedConditionFresh = errors.New("queued condition is already fresh")
+	errQueuedStateChanged   = errors.New("queued state changed")
+)
 
 type queuedConditionDef struct {
 	conditionType string
@@ -372,6 +375,7 @@ type queuedConditionStage struct {
 	itemID       string
 	runRef       ir.DAGRunRef
 	attemptID    string
+	queuedAt     string
 	observations []ir.DAGRunCondition
 	flushed      bool
 }
@@ -403,6 +407,7 @@ func (d *queueDispatcher) newQueuedConditionStage(
 		itemID:     itemID,
 		runRef:     runRef,
 		attemptID:  attemptID,
+		queuedAt:   status.QueuedAt,
 	}
 }
 
@@ -546,6 +551,9 @@ func (s *queuedConditionStage) flushErr(ctx context.Context) error {
 		expectedAttemptID,
 		ir.Queued,
 		func(latest *ir.DAGRunStatus) error {
+			if latest.QueuedAt != s.queuedAt {
+				return errQueuedStateChanged
+			}
 			if !queuedConditionNeedsUpdate(latest, observations) {
 				return errQueuedConditionFresh
 			}
@@ -553,7 +561,7 @@ func (s *queuedConditionStage) flushErr(ctx context.Context) error {
 			return nil
 		}, persis.DAGRunCompareAndSwapOptions{},
 	)
-	if errors.Is(err, errQueuedConditionFresh) {
+	if errors.Is(err, errQueuedConditionFresh) || errors.Is(err, errQueuedStateChanged) {
 		return nil
 	}
 	return err
@@ -759,7 +767,7 @@ func (d *queueDispatcher) dispatchQueuedItem(
 			return false
 		}
 		if suspended {
-			if err := d.dropSuspendedQueuedRun(ctx, queueName, runRef, attempt.ID(), status); err != nil {
+			if err := d.dropSuspendedQueuedRun(ctx, queueName, runRef, item.ID(), attempt.ID(), status); err != nil {
 				logger.Error(ctx, "Failed to drop suspended queued DAG run", tag.Error(err))
 			}
 			return false
@@ -828,9 +836,13 @@ func (d *queueDispatcher) dropSuspendedQueuedRun(
 	ctx context.Context,
 	queueName string,
 	runRef ir.DAGRunRef,
+	itemID string,
 	attemptID string,
 	status *ir.DAGRunStatus,
 ) error {
+	if itemID == "" {
+		return errors.New("delete suspended DAG run queue item: missing queue item ID")
+	}
 	finishedAt := stringutil.FormatTime(time.Now().UTC())
 	currentStatus, swapped, err := d.dagRunRepository.CompareAndSwapLatestAttemptStatus(
 		ctx,
@@ -838,6 +850,9 @@ func (d *queueDispatcher) dropSuspendedQueuedRun(
 		attemptID,
 		ir.Queued,
 		func(latest *ir.DAGRunStatus) error {
+			if latest.QueuedAt != status.QueuedAt {
+				return errQueuedStateChanged
+			}
 			latest.Status = ir.Aborted
 			latest.FinishedAt = finishedAt
 			latest.Error = suspendedQueueDropReason
@@ -848,11 +863,17 @@ func (d *queueDispatcher) dropSuspendedQueuedRun(
 			return nil
 		}, persis.DAGRunCompareAndSwapOptions{},
 	)
+	if errors.Is(err, errQueuedStateChanged) {
+		if _, deleteErr := d.queueStore.DeleteByItemIDs(ctx, queueName, []string{itemID}); deleteErr != nil {
+			return fmt.Errorf("delete superseded DAG run queue item: %w", deleteErr)
+		}
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("abort suspended queued DAG run: %w", err)
 	}
 
-	if _, err := d.queueStore.DequeueByDAGRunID(ctx, queueName, runRef); err != nil && !errors.Is(err, queuedomain.ErrQueueItemNotFound) {
+	if _, err := d.queueStore.DeleteByItemIDs(ctx, queueName, []string{itemID}); err != nil {
 		return fmt.Errorf("dequeue suspended queued DAG run: %w", err)
 	}
 
@@ -1085,9 +1106,11 @@ func (d *queueDispatcher) failQueuedRunBeforeStartup(
 ) error {
 	attemptID := ""
 	itemID := ""
+	queuedAt := ""
 	if conditionStage != nil {
 		attemptID = conditionStage.attemptID
 		itemID = conditionStage.itemID
+		queuedAt = conditionStage.queuedAt
 	}
 	if itemID == "" {
 		return errors.New("delete failed DAG run queue item: missing queue item ID")
@@ -1107,6 +1130,9 @@ func (d *queueDispatcher) failQueuedRunBeforeStartup(
 		attemptID,
 		ir.Queued,
 		func(latest *ir.DAGRunStatus) error {
+			if latest.QueuedAt != queuedAt {
+				return errQueuedStateChanged
+			}
 			latest.Status = ir.Failed
 			latest.FinishedAt = finishedAt
 			latest.Error = startupFailureMessage(failure)
@@ -1117,6 +1143,12 @@ func (d *queueDispatcher) failQueuedRunBeforeStartup(
 			return nil
 		}, persis.DAGRunCompareAndSwapOptions{},
 	)
+	if errors.Is(err, errQueuedStateChanged) {
+		if _, deleteErr := d.queueStore.DeleteByItemIDs(ctx, queueName, []string{itemID}); deleteErr != nil {
+			return fmt.Errorf("delete superseded DAG run queue item: %w", deleteErr)
+		}
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("mark queued DAG run as failed: %w", err)
 	}

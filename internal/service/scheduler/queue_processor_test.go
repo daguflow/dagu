@@ -1083,6 +1083,63 @@ func TestQueueProcessor_SuspendedSchedulerManagedQueuedRunsAreAbortedAndDequeued
 	}
 }
 
+func TestQueueProcessor_SuspendedCleanupPreservesNewRetry(t *testing.T) {
+	dagName := "suspended-retry-race-dag"
+	f := newQueueFixture(t).withDAG(dagName, 1)
+	runRef := ir.NewDAGRunRef(dagName, "run-1")
+	var enqueueErr error
+	f.withProcessor(config.Queues{}, WithIsSuspended(func(ctx context.Context, name string) (bool, error) {
+		attempt, err := f.dagRunRepository.FindAttempt(ctx, runRef)
+		if err != nil {
+			return false, err
+		}
+		status, err := attempt.ReadStatus(ctx)
+		if err != nil {
+			return false, err
+		}
+		status.Status = ir.Failed
+		status.FinishedAt = time.Now().UTC().Format(time.RFC3339)
+		if err := attempt.Open(ctx); err != nil {
+			return false, err
+		}
+		if err := attempt.Write(ctx, *status); err != nil {
+			_ = attempt.Close(ctx)
+			return false, err
+		}
+		if err := attempt.Close(ctx); err != nil {
+			return false, err
+		}
+		_, enqueueErr = queuedomain.EnqueueRetry(
+			ctx,
+			f.dagRunRepository,
+			f.queueStore,
+			f.dag,
+			status,
+			queuedomain.EnqueueRetryOptions{Processes: f.procRepository.(queuedomain.RunProcesses)},
+		)
+		return name == dagName, nil
+	})).simulateQueue(1, false)
+	f.enqueueRunWithTrigger("run-1", ir.TriggerTypeScheduler)
+
+	items, err := f.queueStore.List(f.ctx, dagName)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	originalItemID := items[0].ID()
+
+	f.processor.ProcessQueueItems(f.ctx, dagName)
+
+	require.NoError(t, enqueueErr)
+	status, err := f.dagRunRepository.FindAttempt(f.ctx, runRef)
+	require.NoError(t, err)
+	latest, err := status.ReadStatus(f.ctx)
+	require.NoError(t, err)
+	require.Equal(t, ir.Queued, latest.Status)
+	items, err = f.queueStore.List(f.ctx, dagName)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.NotEqual(t, originalItemID, items[0].ID())
+}
+
 func TestQueueProcessor_LeavesSchedulerManagedRunQueuedWhenSuspensionReadFails(t *testing.T) {
 	dagName := "suspension-read-error-dag"
 	var suspensionReads atomic.Int32

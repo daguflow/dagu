@@ -49,6 +49,7 @@ type Clock func() time.Time
 type processRepository interface {
 	queueProcessRepository
 	zombieProcessRepository
+	queuedomain.RunProcesses
 	CountAliveByDAGName(ctx context.Context, groupName, dagName string) (int, error)
 }
 
@@ -303,7 +304,10 @@ func newScheduler(
 		ProfileResolver: profileResolver,
 		QueuesEnabled:   queuesEnabled,
 		Enqueue:         enqueueFunc,
-		IsQueued:        isQueued,
+		HasGlobalQueue: func(dag *ir.DAG) bool {
+			return cfg.FindQueueConfig(dag.ProcGroup()) != nil
+		},
+		IsQueued: isQueued,
 		RunExists: func(ctx context.Context, dag *ir.DAG, runID string) (bool, error) {
 			_, err := dagRunRepository.FindAttempt(ctx, ir.NewDAGRunRef(dag.Name, runID))
 			switch {
@@ -329,6 +333,7 @@ func newScheduler(
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize retry scanner: %w", err)
 	}
+	retryScanner.processes = procRepository
 
 	return &Scheduler{
 		quit:             make(chan any),

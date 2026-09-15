@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dagucloud/dagu/v2/internal/cmn/stringutil"
 	"github.com/dagucloud/dagu/v2/internal/ir"
 	"github.com/dagucloud/dagu/v2/internal/persis"
 )
@@ -17,7 +16,17 @@ import (
 // ErrRetryStaleLatest indicates the caller tried to retry a non-latest attempt.
 var ErrRetryStaleLatest = errors.New("retry target is no longer the latest attempt")
 
-const retryEnqueueRollbackTimeout = 10 * time.Second
+const (
+	retryEnqueueRollbackTimeout = 10 * time.Second
+	sourceReleaseTimeout        = 2 * time.Second
+	sourceReleasePollInterval   = 25 * time.Millisecond
+)
+
+// RunProcesses reports whether the execution that recorded an attempt still
+// owns its dag-run.
+type RunProcesses interface {
+	IsAttemptAlive(ctx context.Context, procGroup string, dagRun ir.DAGRunRef, attemptID string) (bool, error)
+}
 
 // EnqueueRetryOptions configure a retry enqueue.
 type EnqueueRetryOptions struct {
@@ -27,6 +36,63 @@ type EnqueueRetryOptions struct {
 	// TriggerActor replaces the attributable actor for a user-issued retry.
 	// Nil preserves the actor already recorded on the run.
 	TriggerActor *string
+	// Processes verifies that the execution which produced the status released
+	// the run. User retries wait briefly; automatic retries defer immediately.
+	// Nil skips the check.
+	Processes RunProcesses
+}
+
+// awaitSourceRelease reports whether the execution that recorded status has
+// released the dag-run. Its final write could otherwise overwrite the queued
+// state. Automatic retries can defer to the next scan instead of polling.
+func awaitSourceRelease(
+	ctx context.Context,
+	processes RunProcesses,
+	dag *ir.DAG,
+	status *ir.DAGRunStatus,
+	waitForRelease bool,
+) (bool, error) {
+	procGroup := retryProcGroup(dag, status)
+	if processes == nil || procGroup == "" || status.AttemptID == "" {
+		return true, nil
+	}
+	// Only a finished run has a closing write left to land.
+	if status.Status == ir.NotStarted || status.Status.IsActive() {
+		return true, nil
+	}
+	dagRun := status.DAGRun()
+	if dagRun.ID == "" {
+		return true, nil
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, sourceReleaseTimeout)
+	defer cancel()
+	alive, err := processes.IsAttemptAlive(waitCtx, procGroup, dagRun, status.AttemptID)
+	if err != nil {
+		return false, fmt.Errorf("check whether previous dag-run %s is still finalizing: %w", dagRun, err)
+	}
+	if !alive {
+		return true, nil
+	}
+	if !waitForRelease {
+		return false, nil
+	}
+
+	ticker := time.NewTicker(sourceReleasePollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-waitCtx.Done():
+			return false, fmt.Errorf("previous dag-run %s is still finalizing: %w", dagRun, waitCtx.Err())
+		case <-ticker.C:
+		}
+		alive, err = processes.IsAttemptAlive(waitCtx, procGroup, dagRun, status.AttemptID)
+		if err != nil {
+			return false, fmt.Errorf("check whether previous dag-run %s is still finalizing: %w", dagRun, err)
+		}
+		if !alive {
+			return true, nil
+		}
+	}
 }
 
 // EnqueueRetry queues a DAG run for retry and records its Queued status.
@@ -52,6 +118,13 @@ func EnqueueRetry(
 	if status.Status == ir.Queued {
 		return false, nil
 	}
+	released, err := awaitSourceRelease(ctx, opts.Processes, dag, status, !opts.AutoRetry)
+	if err != nil {
+		return false, fmt.Errorf("enqueue retry: %w", err)
+	}
+	if !released {
+		return false, nil
+	}
 
 	dagRun := status.DAGRun()
 	var originalStatus *ir.DAGRunStatus
@@ -65,7 +138,7 @@ func EnqueueRetry(
 			originalStatus = &snapshot
 			now := time.Now()
 			latest.Status = ir.Queued
-			latest.QueuedAt = stringutil.FormatTime(now)
+			latest.QueuedAt = nextRetryQueuedAt(latest.QueuedAt, now)
 			latest.Conditions = nil
 			latest.TriggerType = ir.TriggerTypeRetry
 			if opts.TriggerActor != nil {
@@ -108,6 +181,15 @@ func EnqueueRetry(
 		return false, fmt.Errorf("enqueue retry: %w; rollback queued retry status: %w", enqueueErr, rollbackErr)
 	}
 	return false, fmt.Errorf("enqueue retry: %w", enqueueErr)
+}
+
+func nextRetryQueuedAt(previous string, now time.Time) string {
+	now = now.UTC()
+	queuedAt := now.Format(time.RFC3339Nano)
+	if queuedAt == previous {
+		queuedAt = now.Add(time.Nanosecond).Format(time.RFC3339Nano)
+	}
+	return queuedAt
 }
 
 func rollbackQueuedRetry(

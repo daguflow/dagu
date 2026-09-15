@@ -404,6 +404,11 @@ func (m *mockProcRepository) IsRunAlive(ctx context.Context, groupName string, d
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *mockProcRepository) IsAttemptAlive(ctx context.Context, groupName string, dagRun ir.DAGRunRef, attemptID string) (bool, error) {
+	args := m.Called(ctx, groupName, dagRun, attemptID)
+	return args.Bool(0), args.Error(1)
+}
+
 func (m *mockProcRepository) ListAllEntries(ctx context.Context) ([]proc.ProcEntry, error) {
 	args := m.Called(ctx)
 	if args.Get(0) == nil {

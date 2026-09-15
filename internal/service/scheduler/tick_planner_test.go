@@ -2066,6 +2066,49 @@ func TestTickPlanner_DispatchRunStart(t *testing.T) {
 	assert.Equal(t, scheduledTime, gotScheduleTime, "Dispatch callback should receive the scheduled time")
 }
 
+// A scheduled run of a DAG that names a configured queue waits for capacity
+// instead of starting as its schedule fires.
+func TestTickPlanner_DispatchRunStartQueued(t *testing.T) {
+	t.Parallel()
+
+	var dispatched, enqueued bool
+	tp := NewTickPlanner(TickPlannerConfig{
+		Dispatch: func(_ context.Context, _ DAGEntry, _ string, _ ir.TriggerType, _ time.Time) error {
+			dispatched = true
+			return nil
+		},
+		Enqueue: func(_ context.Context, _ DAGEntry, _ string, _ ir.TriggerType, _ time.Time) error {
+			enqueued = true
+			return nil
+		},
+		QueuesEnabled:  true,
+		HasGlobalQueue: func(dag *ir.DAG) bool { return dag.Queue == "paced" },
+		Events:         make(chan DAGChangeEvent, 1),
+	})
+	require.NoError(t, tp.Init(context.Background(), nil))
+
+	tp.DispatchRun(context.Background(), PlannedRun{
+		DAGEntry:      DAGEntry{DAG: &ir.DAG{Name: "start-dag", Queue: "paced"}},
+		RunID:         "run-1",
+		ScheduledTime: time.Date(2026, 2, 7, 12, 0, 0, 0, time.UTC),
+		ScheduleType:  ScheduleTypeStart,
+		TriggerType:   ir.TriggerTypeScheduler,
+	})
+	assert.True(t, enqueued, "a run the queue paces should be enqueued")
+	assert.False(t, dispatched, "a run the queue paces should not start directly")
+
+	enqueued = false
+	tp.DispatchRun(context.Background(), PlannedRun{
+		DAGEntry:      DAGEntry{DAG: &ir.DAG{Name: "own-queue-dag"}},
+		RunID:         "run-2",
+		ScheduledTime: time.Date(2026, 2, 7, 12, 0, 0, 0, time.UTC),
+		ScheduleType:  ScheduleTypeStart,
+		TriggerType:   ir.TriggerTypeScheduler,
+	})
+	assert.True(t, dispatched, "a run without a configured queue should start directly")
+	assert.False(t, enqueued, "a run without a configured queue should not be enqueued")
+}
+
 func TestTickPlanner_DispatchRunSuspendedStartSkipped(t *testing.T) {
 	t.Parallel()
 
