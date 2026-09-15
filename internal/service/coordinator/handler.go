@@ -806,6 +806,10 @@ func (h *Handler) createAttemptForTask(ctx context.Context, task *coordinatorv1.
 		return nil, fmt.Errorf("failed to parse DAG definition: %w", err)
 	}
 	dag.SourceFile = task.SourceFile
+	// An unlabeled legacy child still needs its parent's provenance; named workspaces are already known.
+	if task.BaseConfigWorkspace != nil || (dag.BaseConfigWorkspace != nil && *dag.BaseConfigWorkspace == "") {
+		dag.BaseConfigWorkspace = task.BaseConfigWorkspace
+	}
 	labels := labelsForInitialStatus(task, dag)
 	task.Labels = strings.Join(labels, ",")
 
@@ -965,6 +969,9 @@ func (h *Handler) createSubAttemptForTask(ctx context.Context, task *coordinator
 		return nil, fmt.Errorf("failed to parse DAG definition: %w", err)
 	}
 	dag.SourceFile = task.SourceFile
+	if task.BaseConfigWorkspace != nil || (dag.BaseConfigWorkspace != nil && *dag.BaseConfigWorkspace == "") {
+		dag.BaseConfigWorkspace = task.BaseConfigWorkspace
+	}
 	labels := labelsForInitialStatus(task, dag)
 	task.Labels = strings.Join(labels, ",")
 

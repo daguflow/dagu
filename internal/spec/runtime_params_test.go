@@ -14,6 +14,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestRuntimeParamsRetainWorkspace(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dag, err := LoadYAML(ctx, []byte("name: parent\nlabels: [workspace=ops]\nsteps:\n  - run: echo parent\n---\nname: child\nsteps:\n  - run: echo child\n"))
+	require.NoError(t, err)
+	child, err := ResolveRuntimeParams(ctx, dag.LocalDAGs["child"], "", ResolveRuntimeParamsOptions{})
+	require.NoError(t, err)
+	baseDir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(baseDir, "ops"), 0750))
+	require.NoError(t, os.WriteFile(filepath.Join(baseDir, "ops", "base.yaml"), []byte("smtp:\n  host: ops.example\n"), 0600))
+	child, err = RefreshBaseSMTP(child, WithWorkspaceBaseConfigDir(baseDir))
+	require.NoError(t, err)
+	child, err = RebuildFromYAML(ctx, child)
+	require.NoError(t, err)
+	require.NotNil(t, child.SMTP)
+	assert.Equal(t, "ops.example", child.SMTP.Host)
+}
+
 func TestResolveRuntimeParams(t *testing.T) {
 	t.Parallel()
 

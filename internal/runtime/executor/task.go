@@ -162,11 +162,12 @@ func WithTriggerActor(actor string) TaskOption {
 	}
 }
 
-// WithBaseConfig sets the base config YAML content on the task.
+// WithBaseConfig sets the effective base configuration and optional workspace provenance.
 // This allows workers to apply base config without needing local base config files.
-func WithBaseConfig(content string) TaskOption {
+func WithBaseConfig(content string, workspace *string) TaskOption {
 	return func(task *dispatch.DispatchTask) {
 		task.BaseConfig = content
+		task.BaseConfigWorkspace = workspace
 	}
 }
 

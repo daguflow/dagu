@@ -501,7 +501,9 @@ func loadDAGsFromData(ctx buildContext, data []byte, filePath string, base *base
 	}
 
 	fileBase := base
+	fileWorkspace := ""
 	if len(docs) > 0 {
+		fileWorkspace = workspaceNameFromDocument(docs[0].data)
 		fileBase, err = loadEffectiveBaseDefinition(ctx.opts, docs[0].data, base)
 		if err != nil {
 			return nil, fmt.Errorf("failed to process document %d: %w", docs[0].index, err)
@@ -511,7 +513,9 @@ func loadDAGsFromData(ctx buildContext, data []byte, filePath string, base *base
 	dags := make([]*ir.DAG, 0, len(docs))
 	for _, doc := range docs {
 		docBase := fileBase
-		if doc.index != 0 && workspaceNameFromDocument(doc.data) != "" {
+		baseWorkspace := fileWorkspace
+		if name := workspaceNameFromDocument(doc.data); doc.index != 0 && name != "" {
+			baseWorkspace = name
 			docBase, err = loadEffectiveBaseDefinition(ctx.opts, doc.data, base)
 			if err != nil {
 				return nil, fmt.Errorf("failed to process document %d: %w", doc.index, err)
@@ -522,6 +526,7 @@ func loadDAGsFromData(ctx buildContext, data []byte, filePath string, base *base
 		if err != nil {
 			return nil, fmt.Errorf("failed to process document %d: %w", doc.index, err)
 		}
+		dag.BaseConfigWorkspace = &baseWorkspace
 		dags = append(dags, dag)
 	}
 	if err := validateUniqueNames(dags); err != nil {

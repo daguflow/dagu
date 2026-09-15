@@ -10,12 +10,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dagucloud/dagu/v2/internal/cmn/config"
 	"github.com/dagucloud/dagu/v2/internal/cmn/logger"
 	"github.com/dagucloud/dagu/v2/internal/cmn/logger/tag"
 	"github.com/dagucloud/dagu/v2/internal/cmn/runenv"
 	"github.com/dagucloud/dagu/v2/internal/ir"
+	"github.com/dagucloud/dagu/v2/internal/persis"
 	"github.com/dagucloud/dagu/v2/internal/runtimeenv"
 	"github.com/dagucloud/dagu/v2/internal/spec"
+	"github.com/dagucloud/dagu/v2/internal/workspace"
 )
 
 // parseTriggerTypeParam parses and validates the trigger-type flag from the command context.
@@ -80,7 +83,16 @@ func parseScheduleTimeParam(ctx *Context) (string, error) {
 // restoreDAGFromStatus restores a DAG from a previous run's status and YAML.
 // It restores params from the status, loads dotenv, and rebuilds fields excluded
 // from JSON serialization (env, params JSON, registryAuths, etc.).
-func restoreDAGFromStatus(ctx context.Context, dag *ir.DAG, status *ir.DAGRunStatus) (*ir.DAG, error) {
+func restoreDAGFromStatus(ctx context.Context, dag *ir.DAG, status *ir.DAGRunStatus, repository *persis.DAGRunRepository) (*ir.DAG, error) {
+	cfg := config.GetConfig(ctx)
+	opts := []spec.LoadOption{spec.WithBaseConfig(cfg.Paths.BaseConfig)}
+	if cfg.Paths.DAGsDir != "" {
+		opts = append(opts, spec.WithWorkspaceBaseConfigDir(workspace.BaseConfigDir(cfg.Paths.DAGsDir)))
+	}
+	dag, err := refreshRunBaseSMTP(ctx, dag, status, repository, opts)
+	if err != nil {
+		return nil, err
+	}
 	runtimeParams := append([]string(nil), status.ParamsList...)
 	dag.Params = runtimeParams
 	resolvedEnv, err := runtimeenv.Resolve(ctx, dag)
@@ -104,6 +116,32 @@ func restoreDAGFromStatus(ctx context.Context, dag *ir.DAG, status *ir.DAGRunSta
 	}
 	applyPersistedRunWorkingDir(restored, status)
 	return restored, nil
+}
+
+func refreshRunBaseSMTP(ctx context.Context, dag *ir.DAG, status *ir.DAGRunStatus, repository *persis.DAGRunRepository, opts []spec.LoadOption) (*ir.DAG, error) {
+	if dag.BaseConfigWorkspace == nil && repository != nil && !status.Parent.Zero() {
+		attempt, err := findRetryAttempt(ctx, repository, status.Parent, status.Root)
+		if err != nil {
+			return nil, err
+		}
+		parent, err := attempt.ReadDAG(ctx)
+		if err != nil {
+			return nil, err
+		}
+		parentStatus, err := attempt.ReadStatus(ctx)
+		if err != nil {
+			return nil, err
+		}
+		// Legacy child snapshots may omit the workspace inherited from their file.
+		parentCopy := *parent
+		parentCopy.LocalDAGs = map[string]*ir.DAG{dag.Name: dag}
+		parent, err = refreshRunBaseSMTP(ctx, &parentCopy, parentStatus, repository, opts)
+		if err != nil {
+			return nil, err
+		}
+		return parent.LocalDAGs[dag.Name], nil
+	}
+	return spec.RefreshBaseSMTP(dag, opts...)
 }
 
 func applyPersistedRunWorkingDir(dag *ir.DAG, status *ir.DAGRunStatus) {

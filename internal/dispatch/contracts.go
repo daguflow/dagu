@@ -58,11 +58,12 @@ type DispatchTask struct {
 
 	PreviousStatus *ir.DAGRunStatus
 
-	BaseConfig    string
-	Labels        string
-	ScheduleTime  string
-	SourceFile    string
-	SourceWorkDir string
+	BaseConfig          string
+	BaseConfigWorkspace *string
+	Labels              string
+	ScheduleTime        string
+	SourceFile          string
+	SourceWorkDir       string
 
 	WorkerSelector map[string]string
 

@@ -183,7 +183,7 @@ func runStart(ctx *Context, args []string) error {
 		}
 
 		params = status.Params
-		dag, err = restoreDAGFromStatus(ctx.Context, snapshot, status)
+		dag, err = restoreDAGFromStatus(ctx.Context, snapshot, status, ctx.Persistence.DAGRunRepository)
 		if err != nil {
 			return fmt.Errorf("failed to restore DAG from status: %w", err)
 		}
@@ -640,7 +640,9 @@ func dispatchToCoordinatorAndWait(ctx *Context, d *ir.DAG, dagRunID string, opts
 		slog.Any("worker-selector", d.WorkerSelector),
 	)
 
-	var taskOpts []executor.TaskOption
+	taskOpts := []executor.TaskOption{
+		executor.WithBaseConfig(executor.ResolveBaseConfig(d.BaseConfigData, ctx.Config.Paths.BaseConfig), d.BaseConfigWorkspace),
+	}
 	if len(d.WorkerSelector) > 0 {
 		taskOpts = append(taskOpts, executor.WithWorkerSelector(d.WorkerSelector))
 	}

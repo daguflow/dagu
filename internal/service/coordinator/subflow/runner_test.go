@@ -315,6 +315,33 @@ func TestRunnerRunPreservesDAGBaseConfigWithWorkspace(t *testing.T) {
 	assert.Equal(t, string(baseConfig), dispatcher.dispatches[0].BaseConfig)
 }
 
+func TestRunnerRunBaseWorkspace(t *testing.T) {
+	t.Parallel()
+	parentWorkspace := "ops"
+	globalWorkspace := ""
+	for _, childWorkspace := range []*string{nil, &globalWorkspace} {
+		dispatcher := &mockDispatcher{statuses: []*dispatch.DAGRunStatusResult{
+			{Found: false}, {Found: true, Status: &ir.DAGRunStatus{Status: ir.Succeeded}},
+		}}
+		runner := newFastRunner(dispatcher)
+		_, err := runner.Run(context.Background(), runtimeexec.SubWorkflowRequest{
+			DAG: &ir.DAG{
+				Name: "child", YamlData: []byte("name: child\nsteps: []\n"),
+				BaseConfigData: []byte("{}"), BaseConfigWorkspace: childWorkspace,
+			},
+			ParentDAG:  &ir.DAG{BaseConfigWorkspace: &parentWorkspace},
+			RootDAGRun: ir.NewDAGRunRef("parent", "root-1"), RunID: "child-1",
+		})
+		require.NoError(t, err)
+		require.Len(t, dispatcher.dispatches, 1)
+		want := childWorkspace
+		if want == nil {
+			want = &parentWorkspace
+		}
+		assert.Equal(t, want, dispatcher.dispatches[0].BaseConfigWorkspace)
+	}
+}
+
 func TestRunnerRunRejectsBuildWorkflow(t *testing.T) {
 	t.Parallel()
 

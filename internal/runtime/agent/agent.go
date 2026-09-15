@@ -1180,6 +1180,11 @@ func (a *Agent) Run(ctx context.Context) (runErr error) {
 		lastErr = errors.Join(lastErr, snapshotErr)
 	}
 
+	// Terminal status releases remote execution, so notification delivery must finish first.
+	if err := a.reporter.send(ctx, a.dag, finishedStatus, lastErr); err != nil {
+		logger.Error(ctx, "Mail notification failed", tag.Error(err))
+	}
+
 	if err := a.writeStatus(ctx, attempt, finishedStatus); err != nil {
 		logger.Error(ctx, "Failed to persist terminal DAG-run status", tag.Error(err))
 		lastErr = errors.Join(lastErr, err)
@@ -1194,11 +1199,7 @@ func (a *Agent) Run(ctx context.Context) (runErr error) {
 		}
 	}
 
-	// Send the execution report if necessary.
 	a.lastErr = lastErr
-	if err := a.reporter.send(ctx, a.dag, finishedStatus, lastErr); err != nil {
-		logger.Error(ctx, "Mail notification failed", tag.Error(err))
-	}
 
 	// Mark the agent finished.
 	a.finished.Store(true)
@@ -1212,6 +1213,9 @@ func (a *Agent) shouldDelayTerminalStatus(status ir.Status) bool {
 	case ir.Waiting:
 		return true
 	case ir.Failed, ir.Aborted, ir.Succeeded, ir.PartiallySucceeded, ir.Rejected:
+		if a.reporter != nil && a.reporter.selectMailConfig(a.dag, ir.DAGRunStatus{Status: status}, nil) != nil {
+			return true
+		}
 		if a.artifactFinalizer != nil && a.artifactDir != "" {
 			return true
 		}

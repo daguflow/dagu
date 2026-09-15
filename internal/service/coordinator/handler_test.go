@@ -677,6 +677,10 @@ func TestCreateAttemptForTaskCarriesDAGLabels(t *testing.T) {
 	status, err := prepared.attempt.ReadStatus(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, []string{"workspace=ops", "team=platform"}, status.Labels)
+	dag, err := prepared.attempt.ReadDAG(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, dag.BaseConfigWorkspace)
+	assert.Equal(t, "ops", *dag.BaseConfigWorkspace)
 }
 
 func TestCreateAttemptForTaskReturnsStorageErrors(t *testing.T) {

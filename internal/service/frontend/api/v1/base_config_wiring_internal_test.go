@@ -5,7 +5,10 @@ package api
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	generated "github.com/dagucloud/dagu/v2/api/v1"
 	"github.com/dagucloud/dagu/v2/internal/workspace"
@@ -14,8 +17,63 @@ import (
 
 	"github.com/dagucloud/dagu/v2/internal/cmn/config"
 	"github.com/dagucloud/dagu/v2/internal/dagsettings"
+	"github.com/dagucloud/dagu/v2/internal/ir"
+	"github.com/dagucloud/dagu/v2/internal/persis"
 	"github.com/dagucloud/dagu/v2/internal/runtime"
+	"github.com/dagucloud/dagu/v2/internal/testutil"
 )
+
+func TestRestoreSnapshotSMTP(t *testing.T) {
+	t.Parallel()
+
+	basePath := filepath.Join(t.TempDir(), "base.yaml")
+	require.NoError(t, os.WriteFile(basePath, []byte("smtp:\n  host: current.example\n"), 0600))
+	a := &API{config: &config.Config{Paths: config.PathsConfig{BaseConfig: basePath}}}
+	dag := &ir.DAG{
+		Name: "snapshot", YamlData: []byte("steps:\n  - run: echo original\n"),
+		BaseConfigData: []byte("smtp:\n  host: old.example\nenv:\n  ORIGINAL: original\n"),
+	}
+	restored, _, err := a.restoreDAGRunSnapshot(context.Background(), dag, &ir.DAGRunStatus{})
+	require.NoError(t, err)
+	require.NotNil(t, restored.SMTP)
+	assert.Equal(t, "current.example", restored.SMTP.Host)
+	assert.Contains(t, restored.Env, "ORIGINAL=original")
+	assert.Equal(t, dag.YamlData, restored.YamlData)
+}
+
+func TestRestoreLegacyChildSMTP(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	cfg := &config.Config{Paths: config.PathsConfig{DAGsDir: t.TempDir()}}
+	basePath := workspace.BaseConfigPath(cfg.Paths.DAGsDir, "ops")
+	require.NoError(t, os.MkdirAll(filepath.Dir(basePath), 0750))
+	require.NoError(t, os.WriteFile(basePath, []byte("smtp:\n  host: workspace.example\n"), 0600))
+	repository := testutil.NewFileDAGRunRepository(t.TempDir(), persis.DAGRunRepositoryOptions{})
+	root := ir.NewDAGRunRef("root", "root-run")
+	parent := ir.NewDAGRunRef("parent", "parent-run")
+	for _, status := range []ir.DAGRunStatus{
+		{Name: root.Name, DAGRunID: root.ID, Status: ir.Failed},
+		{Name: parent.Name, DAGRunID: parent.ID, Root: root, Parent: root, Status: ir.Failed},
+	} {
+		definition := "steps:\n  - run: echo saved\n"
+		if status.DAGRunID == root.ID {
+			definition = "labels: [workspace=ops]\n" + definition
+		}
+		dag := &ir.DAG{Name: status.Name, YamlData: []byte(definition), BaseConfigData: []byte("{}")}
+		attempt, err := repository.CreateAttempt(ctx, dag, time.Now(), status.DAGRunID,
+			persis.DAGRunCreateAttemptOptions{RootDAGRun: status.Root})
+		require.NoError(t, err)
+		require.NoError(t, attempt.Open(ctx))
+		require.NoError(t, attempt.Write(ctx, status))
+		require.NoError(t, attempt.Close(ctx))
+	}
+	a := &API{config: cfg, dagRunRepository: repository}
+	child := &ir.DAG{Name: "child", YamlData: []byte("steps:\n  - run: echo child\n"), BaseConfigData: []byte("{}")}
+	restored, _, err := a.restoreDAGRunSnapshot(ctx, child, &ir.DAGRunStatus{Root: root, Parent: parent})
+	require.NoError(t, err)
+	require.NotNil(t, restored.SMTP)
+	assert.Equal(t, "workspace.example", restored.SMTP.Host)
+}
 
 type stubBaseConfigStore struct {
 	spec string

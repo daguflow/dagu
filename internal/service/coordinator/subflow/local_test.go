@@ -217,7 +217,7 @@ steps:
 func TestLocalRunPreservesDAGBaseConfigWithWorkspace(t *testing.T) {
 	t.Parallel()
 
-	th := test.Setup(t)
+	th := test.Setup(t, test.WithStatusPersistence())
 	rootDir := t.TempDir()
 	outputFile := filepath.Join(t.TempDir(), "base-value.txt")
 	definition := []byte(`name: workspace-base-config
@@ -243,12 +243,21 @@ steps:
 	require.NoError(t, err)
 
 	root := ir.NewDAGRunRef("parent", uuid.Must(uuid.NewV7()).String())
-	runner := subflow.NewLocal(th.DAGRunMgr, th.DAGRepository)
+	childRunID := uuid.Must(uuid.NewV7()).String()
+	parentWorkspace := "ops"
+	parent := &ir.DAG{Name: root.Name, BaseConfigWorkspace: &parentWorkspace}
+	rootAttempt, err := th.DAGRunRepository.CreateAttempt(th.Context, parent, time.Now(), root.ID, persis.DAGRunCreateAttemptOptions{})
+	require.NoError(t, err)
+	require.NoError(t, rootAttempt.Open(th.Context))
+	require.NoError(t, rootAttempt.Close(th.Context))
+	dag.BaseConfigWorkspace = nil
+	runner := subflow.NewLocal(th.DAGRunMgr, th.DAGRepository, subflow.WithLocalDAGRunRepository(th.DAGRunRepository))
 	result, err := runner.Run(th.Context, executor.SubWorkflowRequest{
 		DAG:          dag,
+		ParentDAG:    parent,
 		RootDAGRun:   root,
 		ParentDAGRun: root,
-		RunID:        uuid.Must(uuid.NewV7()).String(),
+		RunID:        childRunID,
 		Workspace: &executor.SubWorkflowWorkspace{
 			Descriptor: *desc,
 			Archive:    archive,
@@ -261,6 +270,11 @@ steps:
 	content, err := os.ReadFile(outputFile)
 	require.NoError(t, err)
 	require.Equal(t, "base", string(content))
+	attempt, err := th.DAGRunRepository.FindSubAttempt(th.Context, root, childRunID)
+	require.NoError(t, err)
+	snapshot, err := attempt.ReadDAG(th.Context)
+	require.NoError(t, err)
+	require.Equal(t, &parentWorkspace, snapshot.BaseConfigWorkspace)
 }
 
 func TestLocalRunPreservesBuildPathBaseFromCopiedDefinition(t *testing.T) {

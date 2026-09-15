@@ -326,7 +326,7 @@ func (a *API) buildEditRetryPlan(
 		}, validationErrors, nil
 	}
 
-	_, preservedParams, err := restoreDAGRunSnapshot(ctx, sourceDAG, status)
+	_, preservedParams, err := a.restoreDAGRunSnapshot(ctx, sourceDAG, status)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to restore DAG snapshot: %w", err)
 	}
@@ -923,10 +923,14 @@ func cleanEditRetryWorkDir(dir string) string {
 }
 
 func (a *API) dispatchEditRetry(ctx context.Context, dag *ir.DAG, status *ir.DAGRunStatus) error {
+	dag, err := a.refreshBaseSMTP(ctx, dag, status)
+	if err != nil {
+		return err
+	}
 	opts := []executor.TaskOption{
 		executor.WithWorkerSelector(dag.WorkerSelector),
 		executor.WithPreviousStatus(status),
-		executor.WithBaseConfig(executor.ResolveBaseConfig(dag.BaseConfigData, a.config.Paths.BaseConfig)),
+		executor.WithBaseConfig(executor.ResolveBaseConfig(dag.BaseConfigData, a.config.Paths.BaseConfig), dag.BaseConfigWorkspace),
 	}
 	if dag.SourceFile != "" {
 		opts = append(opts, executor.WithSourceFile(dag.SourceFile))

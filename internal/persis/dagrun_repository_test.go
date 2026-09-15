@@ -12,11 +12,51 @@ import (
 	"github.com/dagucloud/dagu/v2/internal/dagrun"
 	"github.com/dagucloud/dagu/v2/internal/ir"
 	"github.com/dagucloud/dagu/v2/internal/persis"
+	_ "github.com/dagucloud/dagu/v2/internal/runtime/builtin/command"
+	"github.com/dagucloud/dagu/v2/internal/spec"
 	"github.com/dagucloud/dagu/v2/internal/testutil"
 	"github.com/dagucloud/dagu/v2/internal/workspace"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRepositorySnapshotSMTP(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	base := []byte("smtp:\n  host: inherited.example\n  password: inherited-password\nenv:\n  Z_FIRST: first\n  A_SECOND: ${Z_FIRST}/second\n")
+	yaml := []byte("name: parent\nsmtp:\n  username: authored-user\nsteps:\n  - run: echo parent\n---\nname: child\nsteps:\n  - run: echo child\n")
+	dag, err := spec.LoadYAML(ctx, yaml, spec.WithBaseConfigContent(base))
+	require.NoError(t, err)
+	repository := testutil.NewFileDAGRunRepository(t.TempDir(), persis.DAGRunRepositoryOptions{})
+	attempt, err := repository.CreateAttempt(ctx, dag, time.Now(), "run", persis.DAGRunCreateAttemptOptions{})
+	require.NoError(t, err)
+	// Prepared attempts may receive a replacement DAG before they are opened.
+	attempt.SetDAG(dag)
+	require.NoError(t, attempt.Open(ctx))
+	t.Cleanup(func() { require.NoError(t, attempt.Close(ctx)) })
+
+	saved, err := attempt.ReadDAG(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, yaml, saved.YamlData)
+	for _, snapshot := range []*ir.DAG{saved, saved.LocalDAGs["child"]} {
+		require.NotNil(t, snapshot)
+		assert.NotContains(t, string(snapshot.BaseConfigData), "inherited-password")
+		rebuilt, err := spec.RebuildFromYAML(ctx, snapshot)
+		require.NoError(t, err)
+		assert.Contains(t, rebuilt.Env, "A_SECOND=first/second")
+		if rebuilt.Name == "parent" {
+			require.NotNil(t, rebuilt.SMTP)
+			assert.Equal(t, "authored-user", rebuilt.SMTP.Username)
+			assert.Empty(t, rebuilt.SMTP.Host)
+		} else {
+			assert.Nil(t, rebuilt.SMTP)
+		}
+	}
+	assert.Equal(t, base, dag.BaseConfigData)
+	assert.Equal(t, base, dag.LocalDAGs["child"].BaseConfigData)
+	assert.Equal(t, "inherited-password", dag.SMTP.Password)
+}
 
 func TestRepositoryNormalizesStatusQueries(t *testing.T) {
 	t.Parallel()

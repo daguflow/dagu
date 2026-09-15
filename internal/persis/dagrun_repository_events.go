@@ -14,6 +14,7 @@ import (
 	"github.com/dagucloud/dagu/v2/internal/dagrun"
 	"github.com/dagucloud/dagu/v2/internal/eventstore"
 	"github.com/dagucloud/dagu/v2/internal/ir"
+	"github.com/dagucloud/dagu/v2/internal/spec"
 )
 
 type eventingAttempt struct {
@@ -35,6 +36,13 @@ func (a *eventingAttempt) Open(ctx context.Context) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	if a.dag != nil {
+		snapshot, err := spec.PrepareDAGSnapshot(a.dag)
+		if err != nil {
+			return err
+		}
+		a.Attempt.SetDAG(snapshot)
+	}
 	if err := a.Attempt.Open(ctx); err != nil {
 		return err
 	}
