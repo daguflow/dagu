@@ -1828,6 +1828,41 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /artifacts:
+    get:
+      summary: "List recent DAG-run artifacts"
+      description: "Returns files produced by DAG runs across all DAGs, newest run first"
+      operationId: "listArtifacts"
+      tags:
+        - "dag-runs"
+      parameters:
+        - $ref: "#/components/parameters/RemoteNode"
+        - $ref: "#/components/parameters/Workspace"
+        - $ref: "#/components/parameters/DateTimeFrom"
+        - $ref: "#/components/parameters/DateTimeTo"
+        - $ref: "#/components/parameters/ArtifactDAGName"
+        - $ref: "#/components/parameters/ArtifactListLimit"
+        - $ref: "#/components/parameters/ArtifactListCursor"
+      responses:
+        "200":
+          description: "A successful response"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactListResponse"
+        "400":
+          description: "Invalid cursor or pagination parameters"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: "Generic error response"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /dags/labels:
     get:
       summary: "List all available DAG labels"
@@ -9835,6 +9870,32 @@ components:
       schema:
         $ref: "#/components/schemas/WikiPagePath"
 
+    ArtifactDAGName:
+      name: name
+      in: query
+      description: "Filter by DAG names containing this value"
+      required: false
+      schema:
+        type: string
+
+    ArtifactListLimit:
+      name: limit
+      in: query
+      description: "Number of artifact files to return (default 100, max 500)"
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 500
+
+    ArtifactListCursor:
+      name: cursor
+      in: query
+      description: "Opaque cursor returned by the previous artifact list response"
+      required: false
+      schema:
+        type: string
+
     SearchCursor:
       name: cursor
       in: query
@@ -13095,6 +13156,44 @@ components:
             - rootDAGRunId
             - log
             - nodes
+
+    ArtifactListItem:
+      type: object
+      description: "One file produced by a DAG-run"
+      properties:
+        name:
+          $ref: "#/components/schemas/DAGName"
+        dagRunId:
+          $ref: "#/components/schemas/DAGRunId"
+        startedAt:
+          type: string
+          description: "RFC 3339 timestamp of when the producing DAG-run started"
+        path:
+          type: string
+          description: "Path of the file relative to the DAG-run artifact directory"
+        size:
+          type: integer
+          format: int64
+          description: "Size of the file in bytes"
+      required:
+        - name
+        - dagRunId
+        - path
+        - size
+
+    ArtifactListResponse:
+      type: object
+      description: "Page of DAG-run artifact files, newest run first"
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArtifactListItem"
+        nextCursor:
+          type: string
+          description: "Opaque cursor for the next page; absent when the last page was returned"
+      required:
+        - items
 
     ArtifactNodeType:
       type: string

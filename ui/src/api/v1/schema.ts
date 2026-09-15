@@ -632,6 +632,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/artifacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List recent DAG-run artifacts
+         * @description Returns files produced by DAG runs across all DAGs, newest run first
+         */
+        get: operations["listArtifacts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/dags/labels": {
         parameters: {
             query?: never;
@@ -5147,6 +5167,26 @@ export interface components {
             /** @description Whether completed human-task input is durable but the same DAG-run still needs its retry queued */
             humanTaskResumePending?: boolean;
         };
+        /** @description One file produced by a DAG-run */
+        ArtifactListItem: {
+            name: components["schemas"]["DAGName"];
+            dagRunId: components["schemas"]["DAGRunId"];
+            /** @description RFC 3339 timestamp of when the producing DAG-run started */
+            startedAt?: string;
+            /** @description Path of the file relative to the DAG-run artifact directory */
+            path: string;
+            /**
+             * Format: int64
+             * @description Size of the file in bytes
+             */
+            size: number;
+        };
+        /** @description Page of DAG-run artifact files, newest run first */
+        ArtifactListResponse: {
+            items: components["schemas"]["ArtifactListItem"][];
+            /** @description Opaque cursor for the next page; absent when the last page was returned */
+            nextCursor?: string;
+        };
         /**
          * @description Artifact tree node type
          * @enum {string}
@@ -6754,6 +6794,12 @@ export interface components {
         Workspace: string;
         /** @description Optional Wiki page path prefix within the selected workspace */
         WikiPagePrefix: components["schemas"]["WikiPagePath"];
+        /** @description Filter by DAG names containing this value */
+        ArtifactDAGName: string;
+        /** @description Number of artifact files to return (default 100, max 500) */
+        ArtifactListLimit: number;
+        /** @description Opaque cursor returned by the previous artifact list response */
+        ArtifactListCursor: string;
         /** @description Opaque cursor returned by the previous search response */
         SearchCursor: string;
         /** @description Number of search results to return (default 20, max 50) */
@@ -8924,6 +8970,59 @@ export interface operations {
             };
             /** @description Wiki page not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Generic error response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listArtifacts: {
+        parameters: {
+            query?: {
+                /** @description name of the remote node */
+                remoteNode?: components["parameters"]["RemoteNode"];
+                /** @description Workspace selector. For list and search APIs, use all, default, or a workspace name. Omitted means all. */
+                workspace?: components["parameters"]["Workspace"];
+                /** @description start datetime for filtering DAG-runs in ISO 8601 format with timezone */
+                fromDate?: components["parameters"]["DateTimeFrom"];
+                /** @description end datetime for filtering DAG-runs in ISO 8601 format with timezone */
+                toDate?: components["parameters"]["DateTimeTo"];
+                /** @description Filter by DAG names containing this value */
+                name?: components["parameters"]["ArtifactDAGName"];
+                /** @description Number of artifact files to return (default 100, max 500) */
+                limit?: components["parameters"]["ArtifactListLimit"];
+                /** @description Opaque cursor returned by the previous artifact list response */
+                cursor?: components["parameters"]["ArtifactListCursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactListResponse"];
+                };
+            };
+            /** @description Invalid cursor or pagination parameters */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };

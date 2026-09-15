@@ -67,6 +67,7 @@ var loadBaseOpenAPISpec = sync.OnceValues(api.GetSpec)
 type API struct {
 	dagRepository        *persis.DAGRepository
 	dagRunRepository     *persis.DAGRunRepository
+	artifactRepository   *persis.ArtifactRepository
 	dagRunMgr            runtime.Manager
 	queueStore           queue.QueueStore
 	procRepository       processRepository
@@ -303,6 +304,13 @@ func WithRemoteNodeResolver(r *remotenode.Resolver) APIOption {
 func WithRemoteNodeStore(s remotenode.Store) APIOption {
 	return func(a *API) {
 		a.remoteNodeStore = s
+	}
+}
+
+// WithArtifactRepository returns an APIOption that sets the artifact repository.
+func WithArtifactRepository(ar *persis.ArtifactRepository) APIOption {
+	return func(a *API) {
+		a.artifactRepository = ar
 	}
 }
 

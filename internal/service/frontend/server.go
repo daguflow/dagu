@@ -279,6 +279,7 @@ type ServerConfig struct {
 	Config               *config.Config
 	DAGRepository        *persis.DAGRepository
 	DAGRunRepository     *persis.DAGRunRepository
+	ArtifactRepository   *persis.ArtifactRepository
 	ProcRepository       *persis.ProcRepository
 	QueueStore           queue.QueueStore
 	DAGRunManager        runtime.Manager
@@ -320,6 +321,9 @@ func NewServer(setup ServerConfig, opts ...ServerOption) (*Server, error) {
 	mr := telemetry.NewRegistry(collector)
 	if setup.LicenseManager != nil {
 		opts = append(opts, WithLicenseManager(setup.LicenseManager))
+	}
+	if setup.ArtifactRepository != nil {
+		opts = append(opts, WithAPIOption(apiv1.WithArtifactRepository(setup.ArtifactRepository)))
 	}
 	if setup.DAGRunLeaseStore != nil {
 		opts = append(opts, WithAPIOption(apiv1.WithDAGRunLeaseStore(setup.DAGRunLeaseStore)))

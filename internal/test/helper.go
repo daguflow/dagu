@@ -286,6 +286,7 @@ func Setup(t *testing.T, opts ...HelperOption) Helper {
 	dagRepository, err := file.NewDAGRepository(cfg, file.WithDAGSkipExamples(true))
 	require.NoError(t, err)
 	dagRunRepository := file.NewDAGRunRepository(cfg)
+	artifactRepository := file.NewArtifactRepository(cfg)
 	procRepository := newProcRepository(cfg)
 	backend := file.NewBackend(cfg.Paths)
 	queueStore := store.NewQueueStore(backend.Collection(persis.CollectionQueue))
@@ -316,6 +317,7 @@ func Setup(t *testing.T, opts ...HelperOption) Helper {
 		DAGRunMgr:                 drm,
 		DAGRepository:             dagRepository,
 		DAGRunRepository:          dagRunRepository,
+		ArtifactRepository:        artifactRepository,
 		ProcRepository:            procRepository,
 		Backend:                   backend,
 		QueueStore:                queueStore,
@@ -526,6 +528,7 @@ type Helper struct {
 	LoggingOutput             *SyncBuffer
 	DAGRepository             *persis.DAGRepository
 	DAGRunRepository          *persis.DAGRunRepository
+	ArtifactRepository        *persis.ArtifactRepository
 	DAGRunMgr                 runtimepkg.Manager
 	ProcRepository            *persis.ProcRepository
 	Backend                   persis.Backend
