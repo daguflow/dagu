@@ -558,6 +558,33 @@ describe('DAGRuns page', () => {
     });
   });
 
+  it('derives a fresh range for a standalone preset URL', async () => {
+    renderPage(
+      vi.fn(),
+      '/dag-runs?dateMode=preset&preset=yesterday&fromDate=2026-01-01T00%3A00&toDate=2026-01-01T23%3A59'
+    );
+
+    await waitFor(() => {
+      const todayStart = dayjs().startOf('day');
+      expect(lastRunQuery()['fromDate']).toBe(
+        todayStart.subtract(1, 'day').unix()
+      );
+      expect(lastRunQuery()['toDate']).toBe(todayStart.unix());
+    });
+  });
+
+  it('derives a fresh range for a standalone specific URL', async () => {
+    renderPage(
+      vi.fn(),
+      '/dag-runs?dateMode=specific&specificPeriod=date&specificValue=2026-09-15'
+    );
+
+    await waitFor(() => {
+      expect(lastRunQuery()['fromDate']).toBe(dayjs('2026-09-15T00:00').unix());
+      expect(lastRunQuery()['toDate']).toBe(dayjs('2026-09-15T23:59').unix());
+    });
+  });
+
   it('ignores stale concrete dates for preset views and derives them fresh', async () => {
     sharedRunViewState.views.push(
       makeRunView({

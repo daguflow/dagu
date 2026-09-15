@@ -642,38 +642,46 @@ function DAGRuns() {
     }
 
     const next = hasUrlFilters ? { ...base, ...urlFilters } : base;
+    // Preset and specific modes define their range relative to "now".
+    // Resolve the merged filters so standalone preset/specific URLs derive
+    // fresh dates instead of falling back to the default range. Legacy URLs
+    // without a dateMode keep their concrete dates.
+    const resolved =
+      dateModeParam === 'preset' || dateModeParam === 'specific'
+        ? resolveRunViewFilters(next)
+        : next;
     const current = currentFiltersRef.current;
 
     setActiveRunViewId(nextActiveRunViewId);
 
-    if (current && areFiltersEqual(current, next)) {
+    if (current && areFiltersEqual(current, resolved)) {
       if (hasUrlFilters) {
-        lastPersistedFiltersRef.current = next;
-        searchState.writeState('dagRuns', searchStateScope, next);
+        lastPersistedFiltersRef.current = resolved;
+        searchState.writeState('dagRuns', searchStateScope, resolved);
       }
       return;
     }
 
-    setSearchText(next.searchText);
-    setDagRunId(next.dagRunId);
-    setStatus(next.status);
-    setSelectedLabels(next.labels);
-    setFromDate(next.fromDate);
-    setToDate(next.toDate);
-    setDateRangeMode(next.dateRangeMode);
-    setDatePreset(next.datePreset);
-    setSpecificPeriod(next.specificPeriod);
-    setSpecificValue(next.specificValue);
+    setSearchText(resolved.searchText);
+    setDagRunId(resolved.dagRunId);
+    setStatus(resolved.status);
+    setSelectedLabels(resolved.labels);
+    setFromDate(resolved.fromDate);
+    setToDate(resolved.toDate);
+    setDateRangeMode(resolved.dateRangeMode);
+    setDatePreset(resolved.datePreset);
+    setSpecificPeriod(resolved.specificPeriod);
+    setSpecificValue(resolved.specificValue);
 
-    setAPISearchText(next.searchText);
-    setApiDagRunId(next.dagRunId);
-    setApiStatus(next.status);
-    setApiLabels(next.labels);
-    setApiFromDate(next.fromDate);
-    setApiToDate(next.toDate);
+    setAPISearchText(resolved.searchText);
+    setApiDagRunId(resolved.dagRunId);
+    setApiStatus(resolved.status);
+    setApiLabels(resolved.labels);
+    setApiFromDate(resolved.fromDate);
+    setApiToDate(resolved.toDate);
 
-    lastPersistedFiltersRef.current = next;
-    searchState.writeState('dagRuns', searchStateScope, next);
+    lastPersistedFiltersRef.current = resolved;
+    searchState.writeState('dagRuns', searchStateScope, resolved);
   }, [
     defaultFilters,
     defaultRunViewId,
