@@ -165,7 +165,7 @@ func (s *RetryScanner) processFailedRunFromSummary(
 		return nil
 	}
 
-	_, err = queuedomain.EnqueueRetry(ctx, s.dagRunRepository, s.queueStore, nil, listed, queuedomain.EnqueueRetryOptions{
+	queued, err := queuedomain.EnqueueRetry(ctx, s.dagRunRepository, s.queueStore, nil, listed, queuedomain.EnqueueRetryOptions{
 		AutoRetry: true,
 		Processes: s.processes,
 	})
@@ -179,6 +179,9 @@ func (s *RetryScanner) processFailedRunFromSummary(
 			return nil
 		}
 		return err
+	}
+	if !queued {
+		return nil
 	}
 
 	logger.Info(ctx, "Retry scanner ensured DAG-level retry is queued",
@@ -251,7 +254,7 @@ func (s *RetryScanner) processFailedRunLegacy(
 		return nil
 	}
 
-	_, err = queuedomain.EnqueueRetry(ctx, s.dagRunRepository, s.queueStore, dagSnapshot, latestStatus, queuedomain.EnqueueRetryOptions{
+	queued, err := queuedomain.EnqueueRetry(ctx, s.dagRunRepository, s.queueStore, dagSnapshot, latestStatus, queuedomain.EnqueueRetryOptions{
 		AutoRetry: true,
 		Processes: s.processes,
 	})
@@ -265,6 +268,9 @@ func (s *RetryScanner) processFailedRunLegacy(
 			return nil
 		}
 		return err
+	}
+	if !queued {
+		return nil
 	}
 
 	logger.Info(ctx, "Retry scanner ensured DAG-level retry is queued",

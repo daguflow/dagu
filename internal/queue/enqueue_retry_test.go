@@ -406,6 +406,68 @@ func TestEnqueueRetryRejectsUnconfirmedSource(t *testing.T) {
 	}
 }
 
+func TestEnqueueRetrySourceReleasePolicy(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		autoRetry  bool
+		wantQueued bool
+		wantStatus ir.Status
+		wantCalls  int
+	}{
+		{
+			name:       "AutoRetryProbesOnce",
+			autoRetry:  true,
+			wantStatus: ir.Failed,
+			wantCalls:  1,
+		},
+		{
+			name:       "UserRetryWaits",
+			wantQueued: true,
+			wantStatus: ir.Queued,
+			wantCalls:  2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			status := &ir.DAGRunStatus{
+				Name:      "test-dag",
+				DAGRunID:  "run-source",
+				AttemptID: "att-source",
+				Status:    ir.Failed,
+				ProcGroup: "test-queue",
+			}
+			backend := &stubDAGRunStore{status: cloneDAGRunStatus(status)}
+			queueStore := &recordingRetryQueueStore{}
+			processes := &sequenceRetryRunProcesses{alive: []bool{true, false}}
+			repository := persis.NewDAGRunRepository(backend, nil, persis.DAGRunRepositoryOptions{})
+
+			queued, err := queue.EnqueueRetry(
+				t.Context(),
+				repository,
+				queueStore,
+				&ir.DAG{Name: "test-dag", Queue: "test-queue"},
+				status,
+				queue.EnqueueRetryOptions{AutoRetry: tt.autoRetry, Processes: processes},
+			)
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantQueued, queued)
+			assert.Equal(t, tt.wantStatus, backend.status.Status)
+			assert.Equal(t, tt.wantCalls, processes.calls)
+			if tt.wantQueued {
+				assert.Equal(t, 1, queueStore.enqueueCalls)
+			} else {
+				assert.Zero(t, queueStore.enqueueCalls)
+			}
+		})
+	}
+}
+
 type retryRunProcesses struct {
 	alive bool
 	err   error
@@ -413,6 +475,17 @@ type retryRunProcesses struct {
 
 func (p retryRunProcesses) IsAttemptAlive(context.Context, string, ir.DAGRunRef, string) (bool, error) {
 	return p.alive, p.err
+}
+
+type sequenceRetryRunProcesses struct {
+	alive []bool
+	calls int
+}
+
+func (p *sequenceRetryRunProcesses) IsAttemptAlive(context.Context, string, ir.DAGRunRef, string) (bool, error) {
+	alive := p.alive[min(p.calls, len(p.alive)-1)]
+	p.calls++
+	return alive, nil
 }
 
 type recordingRetryQueueStore struct {

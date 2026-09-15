@@ -36,43 +36,61 @@ type EnqueueRetryOptions struct {
 	// TriggerActor replaces the attributable actor for a user-issued retry.
 	// Nil preserves the actor already recorded on the run.
 	TriggerActor *string
-	// Processes lets the enqueue wait for the execution that produced the
-	// status to release the run. Nil skips the wait.
+	// Processes verifies that the execution which produced the status released
+	// the run. User retries wait briefly; automatic retries defer immediately.
+	// Nil skips the check.
 	Processes RunProcesses
 }
 
-// awaitSourceRelease gives the execution that recorded status a moment to let
-// go of the dag-run. Its closing status write would otherwise land after this
-// enqueue, return the run to its finished status, and strand the queue item.
-func awaitSourceRelease(ctx context.Context, processes RunProcesses, dag *ir.DAG, status *ir.DAGRunStatus) error {
+// awaitSourceRelease reports whether the execution that recorded status has
+// released the dag-run. Its final write could otherwise overwrite the queued
+// state. Automatic retries can defer to the next scan instead of polling.
+func awaitSourceRelease(
+	ctx context.Context,
+	processes RunProcesses,
+	dag *ir.DAG,
+	status *ir.DAGRunStatus,
+	waitForRelease bool,
+) (bool, error) {
 	procGroup := retryProcGroup(dag, status)
 	if processes == nil || procGroup == "" || status.AttemptID == "" {
-		return nil
+		return true, nil
 	}
 	// Only a finished run has a closing write left to land.
 	if status.Status == ir.NotStarted || status.Status.IsActive() {
-		return nil
+		return true, nil
 	}
 	dagRun := status.DAGRun()
 	if dagRun.ID == "" {
-		return nil
+		return true, nil
 	}
 	waitCtx, cancel := context.WithTimeout(ctx, sourceReleaseTimeout)
 	defer cancel()
+	alive, err := processes.IsAttemptAlive(waitCtx, procGroup, dagRun, status.AttemptID)
+	if err != nil {
+		return false, fmt.Errorf("check whether previous dag-run %s is still finalizing: %w", dagRun, err)
+	}
+	if !alive {
+		return true, nil
+	}
+	if !waitForRelease {
+		return false, nil
+	}
+
 	ticker := time.NewTicker(sourceReleasePollInterval)
 	defer ticker.Stop()
 	for {
-		alive, err := processes.IsAttemptAlive(waitCtx, procGroup, dagRun, status.AttemptID)
-		if err != nil {
-			return fmt.Errorf("check whether previous dag-run %s is still finalizing: %w", dagRun, err)
-		}
-		if !alive {
-			return nil
-		}
 		select {
 		case <-waitCtx.Done():
-			return fmt.Errorf("previous dag-run %s is still finalizing: %w", dagRun, waitCtx.Err())
+			return false, fmt.Errorf("previous dag-run %s is still finalizing: %w", dagRun, waitCtx.Err())
 		case <-ticker.C:
+		}
+		alive, err = processes.IsAttemptAlive(waitCtx, procGroup, dagRun, status.AttemptID)
+		if err != nil {
+			return false, fmt.Errorf("check whether previous dag-run %s is still finalizing: %w", dagRun, err)
+		}
+		if !alive {
+			return true, nil
 		}
 	}
 }
@@ -100,8 +118,12 @@ func EnqueueRetry(
 	if status.Status == ir.Queued {
 		return false, nil
 	}
-	if err := awaitSourceRelease(ctx, opts.Processes, dag, status); err != nil {
+	released, err := awaitSourceRelease(ctx, opts.Processes, dag, status, !opts.AutoRetry)
+	if err != nil {
 		return false, fmt.Errorf("enqueue retry: %w", err)
+	}
+	if !released {
+		return false, nil
 	}
 
 	dagRun := status.DAGRun()
