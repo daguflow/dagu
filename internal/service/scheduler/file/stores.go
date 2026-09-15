@@ -64,7 +64,7 @@ func NewDependencies(ctx context.Context, cfg *config.Config, backend persis.Bac
 }
 
 func initMonitorStores(ctx context.Context, cfg *config.Config, backend persis.Backend, deps *scheduler.Dependencies) {
-	key, err := crypto.ResolveKey(cfg.Paths.DataDir)
+	key, err := crypto.ResolveKey(cfg.Paths.DataDir, true)
 	if err != nil {
 		logger.Warn(ctx, "Failed to resolve encryption key for encrypted stores", tag.Error(err))
 		logger.Warn(ctx, "Notification settings store is disabled because encrypted storage is not available")

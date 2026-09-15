@@ -29,7 +29,7 @@ func NewSecretStore(ctx context.Context, cfg *config.Config, col persis.Collecti
 	if cfg == nil || cfg.Paths.DataDir == "" {
 		return nil
 	}
-	if encKey, encErr := crypto.ResolveKey(cfg.Paths.DataDir); encErr != nil {
+	if encKey, encErr := crypto.ResolveKey(cfg.Paths.DataDir, true); encErr != nil {
 		logger.Warn(ctx, "Failed to resolve encryption key for secret store", tag.Error(encErr))
 	} else if enc, encErr := crypto.NewEncryptor(encKey); encErr != nil {
 		logger.Warn(ctx, "Failed to create encryptor for secret store", tag.Error(encErr))

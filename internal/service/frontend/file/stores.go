@@ -198,7 +198,7 @@ func newWorkspaceStore(cfg *config.Config, col persis.Collection) (*store.Worksp
 }
 
 func initEncryptedStores(ctx context.Context, cfg *config.Config, backend persis.Backend, stores *frontend.Stores) {
-	encKey, err := crypto.ResolveKey(cfg.Paths.DataDir)
+	encKey, err := crypto.ResolveKey(cfg.Paths.DataDir, true)
 	if err != nil {
 		logger.Warn(ctx, "Failed to resolve encryption key for encrypted stores", tag.Error(err))
 		logger.Warn(ctx, "Notification settings store is disabled because encrypted storage is not available")
@@ -304,7 +304,7 @@ func newBuiltinAuth(ctx context.Context, cfg *config.Config, backend persis.Back
 	}
 
 	var webhookEncryptor *crypto.Encryptor
-	encKey, encErr := crypto.ResolveKey(cfg.Paths.DataDir)
+	encKey, encErr := crypto.ResolveKey(cfg.Paths.DataDir, true)
 	if encErr != nil {
 		logger.Warn(ctx, "Failed to resolve encryption key for webhook store", tag.Error(encErr))
 	} else {

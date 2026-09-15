@@ -6,6 +6,7 @@ package crypto
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,42 +22,51 @@ const (
 	keyRandomBytes = 32
 )
 
-// ResolveKey returns an encryption key using the following priority:
-// 1. DAGU_ENCRYPTION_KEY environment variable
-// 2. Key file at <dataDir>/auth/encryption_key
-// 3. Auto-generates and persists a new random key
-func ResolveKey(dataDir string) (string, error) {
-	// 1. Environment variable
+// ResolveKey returns DAGU_ENCRYPTION_KEY or the key in dataDir/auth/encryption_key.
+// A missing key is generated only when createIfMissing is true. Existing empty
+// or unreadable key files return errors and are never replaced.
+func ResolveKey(dataDir string, createIfMissing bool) (string, error) {
 	if key := os.Getenv("DAGU_ENCRYPTION_KEY"); key != "" {
 		return key, nil
 	}
 
-	// 2. File-based key
 	keyDir := filepath.Join(dataDir, keyDirName)
 	keyPath := filepath.Join(keyDir, keyFileName)
-
-	data, err := os.ReadFile(keyPath) //nolint:gosec // path is constructed from trusted dataDir
+	key, err := readKey(keyPath)
 	if err == nil {
-		key := string(data)
-		if key != "" {
-			return key, nil
-		}
+		return key, nil
+	}
+	if !createIfMissing || !errors.Is(err, os.ErrNotExist) {
+		return "", err
 	}
 
-	// 3. Auto-generate
 	rawKey := make([]byte, keyRandomBytes)
 	if _, err := rand.Read(rawKey); err != nil {
 		return "", fmt.Errorf("crypto: failed to generate random key: %w", err)
 	}
-	key := base64.StdEncoding.EncodeToString(rawKey)
+	key = base64.StdEncoding.EncodeToString(rawKey)
 
 	if err := os.MkdirAll(keyDir, keyDirPerms); err != nil {
 		return "", fmt.Errorf("crypto: failed to create key directory: %w", err)
 	}
 
-	if err := fileutil.WriteFileAtomic(keyPath, []byte(key), keyFilePerms); err != nil {
+	if err := fileutil.WriteFileAtomicExclusive(keyPath, []byte(key), keyFilePerms); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return readKey(keyPath)
+		}
 		return "", fmt.Errorf("crypto: failed to persist encryption key: %w", err)
 	}
 
 	return key, nil
+}
+
+func readKey(path string) (string, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // path is constructed from trusted dataDir
+	if err != nil {
+		return "", fmt.Errorf("crypto: failed to read encryption key: %w", err)
+	}
+	if len(data) == 0 {
+		return "", fmt.Errorf("crypto: encryption key file is empty")
+	}
+	return string(data), nil
 }

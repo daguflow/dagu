@@ -446,7 +446,7 @@ func TestDAGNotifications_SubscriptionUpdatesWithoutLicense(t *testing.T) {
 func seedReusableNotificationSubscription(t *testing.T, server test.Server, dagName string) notificationmodel.Store {
 	t.Helper()
 
-	key, err := dagucrypto.ResolveKey(server.Config.Paths.DataDir)
+	key, err := dagucrypto.ResolveKey(server.Config.Paths.DataDir, true)
 	require.NoError(t, err)
 	encryptor, err := dagucrypto.NewEncryptor(key)
 	require.NoError(t, err)

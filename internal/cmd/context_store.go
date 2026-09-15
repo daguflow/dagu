@@ -88,7 +88,7 @@ type cliContextStore struct {
 }
 
 func newCLIContextStore(dataDir, contextsDir string) (*cliContextStore, error) {
-	encKey, err := crypto.ResolveKey(dataDir)
+	encKey, err := crypto.ResolveKey(dataDir, true)
 	if err != nil {
 		return nil, err
 	}

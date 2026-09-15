@@ -50,7 +50,7 @@ func TestNotificationServiceUsesConfiguredPublicURL(t *testing.T) {
 		Paths:  config.PathsConfig{DataDir: t.TempDir()},
 		Server: config.Server{PublicURL: "https://dagu.example.com/workflows"},
 	}
-	key, err := crypto.ResolveKey(cfg.Paths.DataDir)
+	key, err := crypto.ResolveKey(cfg.Paths.DataDir, true)
 	require.NoError(t, err)
 	encryptor, err := crypto.NewEncryptor(key)
 	require.NoError(t, err)

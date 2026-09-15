@@ -477,7 +477,7 @@ func (a *API) secretProviderRefFingerprint(providerType secretpkg.ProviderType, 
 	if a.config == nil || a.config.Paths.DataDir == "" {
 		return "", errors.New("secret fingerprint key is not configured")
 	}
-	key, err := crypto.ResolveKey(a.config.Paths.DataDir)
+	key, err := crypto.ResolveKey(a.config.Paths.DataDir, true)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve secret fingerprint key: %w", err)
 	}
