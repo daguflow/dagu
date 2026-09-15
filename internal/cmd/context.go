@@ -31,6 +31,7 @@ import (
 	"github.com/dagucloud/dagu/v2/internal/license"
 	"github.com/dagucloud/dagu/v2/internal/persis"
 	"github.com/dagucloud/dagu/v2/internal/persis/file"
+	fileartifact "github.com/dagucloud/dagu/v2/internal/persis/file/artifact"
 	filebaseconfig "github.com/dagucloud/dagu/v2/internal/persis/file/baseconfig"
 	"github.com/dagucloud/dagu/v2/internal/proc"
 	"github.com/dagucloud/dagu/v2/internal/runtime"
@@ -291,6 +292,7 @@ func NewContext(cmd *cobra.Command, flags []commandLineFlag) (*Context, error) {
 	// Initialize caches shared by long-running process roles.
 	var dagCache *fileutil.Cache[*ir.DAG]
 	var dagRunStatusCache *fileutil.Cache[*ir.DAGRunStatus]
+	var artifactRecordCache *fileutil.Cache[*fileartifact.Record]
 	var caches []fileutil.CacheMetrics
 
 	switch cmd.Name() {
@@ -302,12 +304,18 @@ func NewContext(cmd *cobra.Command, flags []commandLineFlag) (*Context, error) {
 		dagRunStatusCache = hc
 		dagCache = fileutil.NewCache[*ir.DAG]("dag_definition", limits.DAG.Limit, limits.DAG.TTL)
 		dagCache.StartEviction(ctx)
-		caches = append(caches, dagCache, hc)
+		// Artifact index records are read once per listed run and are far
+		// smaller than a status, so the DAG-run limits are a safe bound.
+		ac := fileutil.NewCache[*fileartifact.Record]("artifact_record", limits.DAGRun.Limit, limits.DAGRun.TTL)
+		ac.StartEviction(ctx)
+		artifactRecordCache = ac
+		caches = append(caches, dagCache, hc, ac)
 	}
 
 	persistence, err := newFilePersistence(ctx, cfg, backend, filePersistenceOptions{
-		DAGCache:          dagCache,
-		DAGRunStatusCache: dagRunStatusCache,
+		DAGCache:            dagCache,
+		DAGRunStatusCache:   dagRunStatusCache,
+		ArtifactRecordCache: artifactRecordCache,
 	})
 	if err != nil {
 		return nil, err
