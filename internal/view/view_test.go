@@ -68,6 +68,69 @@ func TestView_ValidateWorkflowRejectsInvalidFields(t *testing.T) {
 	}
 }
 
+func TestView_ValidateRun(t *testing.T) {
+	v := &view.View{
+		Name:           "Production runs",
+		Type:           view.TypeRun,
+		WorkspaceScope: view.WorkspaceScopeWorkspace,
+		Workspace:      "production",
+		DAGRunID:       "019df6cf-0127-7340-bd96-d51bc1453045",
+		RunStatus:      "5",
+		DateMode:       view.DateModePreset,
+		DatePreset:     view.DatePresetLast7Days,
+		SpecificPeriod: view.SpecificPeriodDate,
+		SpecificValue:  "2026-09-15",
+		FromDate:       "2026-09-15T00:00",
+		ToDate:         "2026-09-15T23:59",
+		Pinned:         true,
+	}
+	v.Normalize()
+
+	require.NoError(t, v.Validate())
+	assert.Equal(t, view.MinIntervalDays, v.IntervalDays)
+	assert.Nil(t, v.Columns)
+	assert.True(t, v.Pinned)
+}
+
+func TestView_ValidateRunRejectsInvalidFields(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*view.View)
+		want   error
+	}{
+		{"all scope with workspace", func(v *view.View) { v.Workspace = "production" }, view.ErrInvalidWorkspaceScope},
+		{"workspace scope without workspace", func(v *view.View) { v.WorkspaceScope = view.WorkspaceScopeWorkspace }, view.ErrInvalidWorkspaceScope},
+		{"dagRunId too long", func(v *view.View) { v.DAGRunID = strings.Repeat("r", view.MaxDAGRunIDLength+1) }, view.ErrDAGRunIDTooLong},
+		{"runStatus too long", func(v *view.View) { v.RunStatus = strings.Repeat("s", view.MaxRunStatusLength+1) }, view.ErrRunStatusTooLong},
+		{"unknown date mode", func(v *view.View) { v.DateMode = "week" }, view.ErrInvalidDateMode},
+		{"unknown date preset", func(v *view.View) { v.DatePreset = "tomorrow" }, view.ErrInvalidDatePreset},
+		{"unknown specific period", func(v *view.View) { v.SpecificPeriod = "week" }, view.ErrInvalidSpecificPeriod},
+		{"specific value too long", func(v *view.View) { v.SpecificValue = strings.Repeat("v", view.MaxSpecificValueLength+1) }, view.ErrSpecificValueTooLong},
+		{"date too long", func(v *view.View) { v.FromDate = strings.Repeat("d", view.MaxDateLength+1) }, view.ErrDateTooLong},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v := &view.View{Name: "runs", Type: view.TypeRun}
+			v.Normalize()
+			tt.mutate(v)
+			assert.ErrorIs(t, v.Validate(), tt.want)
+		})
+	}
+}
+
+func TestView_NormalizeRunDefaults(t *testing.T) {
+	v := &view.View{Name: "runs", Type: view.TypeRun}
+	v.Normalize()
+
+	assert.Equal(t, view.WorkspaceScopeAll, v.WorkspaceScope)
+	assert.Equal(t, view.RunStatusAll, v.RunStatus)
+	assert.Equal(t, view.DateModePreset, v.DateMode)
+	assert.Equal(t, view.DatePresetToday, v.DatePreset)
+	assert.Equal(t, view.SpecificPeriodDate, v.SpecificPeriod)
+	require.NoError(t, v.Validate())
+}
+
 func TestView_Validate_Errors(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -144,6 +207,33 @@ func TestView_WorkflowStorageRoundTrip(t *testing.T) {
 		SortField:      view.WorkflowSortName,
 		SortOrder:      view.SortOrderAscending,
 		ActiveOnly:     true,
+		Default:        true,
+		Pinned:         true,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+
+	assert.Equal(t, original, original.ToStorage().ToView())
+}
+
+func TestView_RunStorageRoundTrip(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	original := &view.View{
+		ID:             "run-id",
+		Name:           "Failed runs",
+		Type:           view.TypeRun,
+		WorkspaceScope: view.WorkspaceScopeWorkspace,
+		Workspace:      "production",
+		DAGName:        "etl",
+		Labels:         []string{"team=platform"},
+		DAGRunID:       "019df6cf-0127-7340-bd96-d51bc1453045",
+		RunStatus:      "5",
+		DateMode:       view.DateModeSpecific,
+		DatePreset:     view.DatePresetToday,
+		SpecificPeriod: view.SpecificPeriodMonth,
+		SpecificValue:  "2026-09",
+		FromDate:       "2026-09-01T00:00",
+		ToDate:         "2026-09-30T23:59",
 		Default:        true,
 		Pinned:         true,
 		CreatedAt:      now,

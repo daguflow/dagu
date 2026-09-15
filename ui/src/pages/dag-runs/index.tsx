@@ -5,7 +5,7 @@ import dayjs from 'dayjs';
 import { Layers, List, Search } from 'lucide-react';
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Status } from '../../api/v1/schema';
+import { Status, ViewSpecType } from '../../api/v1/schema';
 import { Button } from '@/components/ui/button';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { Input } from '@/components/ui/input';
@@ -19,6 +19,7 @@ import {
 import { LabelCombobox } from '@/components/ui/label-combobox';
 import { ToggleButton, ToggleGroup } from '@/components/ui/toggle-group';
 import { AppBarContext } from '../../contexts/AppBarContext';
+import { useCanWriteForWorkspace } from '../../contexts/AuthContext';
 import { useConfig } from '../../contexts/ConfigContext';
 import { useSearchState } from '../../contexts/SearchStateContext';
 import { useUserPreferences } from '../../contexts/UserPreference';
@@ -27,6 +28,18 @@ import { DAGRunDetailsModal } from '../../features/dag-runs/components/dag-run-d
 import DAGRunGroupedView from '../../features/dag-runs/components/dag-run-list/DAGRunGroupedView';
 import DAGRunTable from '../../features/dag-runs/components/dag-run-list/DAGRunTable';
 import { usePaginatedDAGRuns } from '../../features/dag-runs/hooks/dagRunPagination';
+import {
+  buildRunViewSpec,
+  dagRunsFilterSetFromView,
+  type DAGRunsFilterSet,
+  type DAGRunsFilterView,
+} from '../../features/dag-runs/lib/runViews';
+import { ViewSelector } from '../../features/views/ViewSelector';
+import {
+  viewMatchesScope,
+  viewScopeForSelection,
+} from '../../features/views/viewScope';
+import { useViews, type View } from '../../hooks/useViews';
 import { useQuery } from '../../hooks/api';
 import { useBulkDAGRunSelection } from '../../features/dag-runs/hooks/useBulkDAGRunSelection';
 import {
@@ -40,18 +53,24 @@ import type { StatusTab } from '@/features/dags/components/DAGStatus';
 import { I18nText } from '@/i18n/I18nText';
 import { I18nProps } from '@/i18n/I18nProps';
 
-type DAGRunsFilters = {
-  searchText: string;
-  dagRunId: string;
-  status: string;
-  labels: string[];
-  fromDate?: string;
-  toDate?: string;
-  dateRangeMode: 'preset' | 'specific' | 'custom';
-  datePreset: string;
-  specificPeriod: 'date' | 'month' | 'year';
-  specificValue: string;
-};
+type DAGRunsFilters = DAGRunsFilterSet;
+
+const ALL_RUNS_VIEW_PARAM = 'all';
+
+const RUN_FILTER_QUERY_KEYS = [
+  'name',
+  'dagRunId',
+  'status',
+  'labels',
+  'tags',
+  'fromDate',
+  'toDate',
+  'dateMode',
+  'preset',
+  'specificValue',
+  'specificPeriod',
+  'view',
+] as const;
 
 const areLabelsEqual = (a: string[], b: string[]): boolean => {
   if (a.length !== b.length) return false;
@@ -97,6 +116,20 @@ const areFiltersEqual = (a: DAGRunsFilters, b: DAGRunsFilters): boolean =>
   a.datePreset === b.datePreset &&
   a.specificPeriod === b.specificPeriod &&
   a.specificValue === b.specificValue;
+
+const cloneFilters = (filters: DAGRunsFilters): DAGRunsFilters => ({
+  ...filters,
+  labels: [...filters.labels],
+});
+
+function dagRunsFilterViewFromView(view: View): DAGRunsFilterView {
+  return {
+    id: view.id,
+    name: view.name,
+    pinned: view.pinned ?? false,
+    filters: dagRunsFilterSetFromView(view),
+  };
+}
 
 function useAutoLoadMore(
   sentinelRef: React.RefObject<HTMLDivElement | null>,
@@ -144,6 +177,31 @@ function DAGRuns() {
     remoteNode: remoteKey,
     workspace: workspaceKey,
   });
+  const runViewScope = React.useMemo(
+    () => viewScopeForSelection(workspaceSelection),
+    [workspaceSelection]
+  );
+  const canManageRunViews = useCanWriteForWorkspace(runViewScope.workspace);
+  const {
+    views: sharedRunViews,
+    isLoading: runViewsLoading,
+    createView,
+    updateView,
+    deleteView,
+  } = useViews(ViewSpecType.run);
+  const scopedRunViews = React.useMemo(
+    () => sharedRunViews.filter((view) => viewMatchesScope(view, runViewScope)),
+    [sharedRunViews, runViewScope]
+  );
+  const runViews = React.useMemo(
+    () => scopedRunViews.map(dagRunsFilterViewFromView),
+    [scopedRunViews]
+  );
+  const defaultRunViewId = scopedRunViews.find((view) => view.isDefault)?.id;
+  const [activeRunViewId, setActiveRunViewId] = React.useState<string | null>(
+    null
+  );
+  const [runViewError, setRunViewError] = React.useState<string | null>(null);
 
   // Extract short datetime format from URL if present
   const parseDateFromUrl = React.useCallback(
@@ -379,16 +437,109 @@ function DAGRuns() {
 
   const lastPersistedFiltersRef = React.useRef<DAGRunsFilters | null>(null);
 
+  const getPresetDates = React.useCallback(
+    (preset: string): { from: string; to?: string } => {
+      const now = dayjs();
+      const startOfDay =
+        config.tzOffsetInSec !== undefined
+          ? now.utcOffset(config.tzOffsetInSec / 60).startOf('day')
+          : now.startOf('day');
+
+      switch (preset) {
+        case 'today':
+          return { from: startOfDay.format('YYYY-MM-DDTHH:mm') };
+        case 'yesterday':
+          return {
+            from: startOfDay.subtract(1, 'day').format('YYYY-MM-DDTHH:mm'),
+            to: startOfDay.format('YYYY-MM-DDTHH:mm'),
+          };
+        case 'last7days':
+          return {
+            from: startOfDay.subtract(7, 'day').format('YYYY-MM-DDTHH:mm'),
+          };
+        case 'last30days':
+          return {
+            from: startOfDay.subtract(30, 'day').format('YYYY-MM-DDTHH:mm'),
+          };
+        case 'thisWeek':
+          return {
+            from: startOfDay.startOf('week').format('YYYY-MM-DDTHH:mm'),
+          };
+        case 'thisMonth':
+          return {
+            from: startOfDay.startOf('month').format('YYYY-MM-DDTHH:mm'),
+          };
+        default:
+          return { from: startOfDay.format('YYYY-MM-DDTHH:mm') };
+      }
+    },
+    [config.tzOffsetInSec]
+  );
+
+  const getSpecificPeriodDates = React.useCallback(
+    (
+      period: 'date' | 'month' | 'year',
+      value: string
+    ): { from: string; to?: string } => {
+      switch (period) {
+        case 'date': {
+          const date = dayjs(value);
+          return {
+            from: date.startOf('day').format('YYYY-MM-DDTHH:mm'),
+            to: date.endOf('day').format('YYYY-MM-DDTHH:mm'),
+          };
+        }
+        case 'month': {
+          const date = dayjs(value);
+          return {
+            from: date.startOf('month').format('YYYY-MM-DDTHH:mm'),
+            to: date.endOf('month').format('YYYY-MM-DDTHH:mm'),
+          };
+        }
+        case 'year': {
+          const date = dayjs(value);
+          return {
+            from: date.startOf('year').format('YYYY-MM-DDTHH:mm'),
+            to: date.endOf('year').format('YYYY-MM-DDTHH:mm'),
+          };
+        }
+      }
+    },
+    []
+  );
+
+  // Saved run views store relative date filters (preset or specific value);
+  // resolve them to concrete dates whenever the view is applied or compared.
+  const resolveRunViewFilters = React.useCallback(
+    (filters: DAGRunsFilterSet): DAGRunsFilterSet => {
+      if (filters.dateRangeMode === 'preset') {
+        const dates = getPresetDates(filters.datePreset);
+        return { ...filters, fromDate: dates.from, toDate: dates.to };
+      }
+      if (filters.dateRangeMode === 'specific') {
+        const dates = getSpecificPeriodDates(
+          filters.specificPeriod,
+          filters.specificValue
+        );
+        return { ...filters, fromDate: dates.from, toDate: dates.to };
+      }
+      return {
+        ...filters,
+        fromDate: filters.fromDate ?? defaultFilters.fromDate,
+      };
+    },
+    [defaultFilters, getPresetDates, getSpecificPeriodDates]
+  );
+
   React.useEffect(() => {
+    if (runViewsLoading) {
+      return;
+    }
     const params = new URLSearchParams(location.search);
     const stored = searchState.readState<DAGRunsFilters>(
       'dagRuns',
       searchStateScope
     );
-    const base: DAGRunsFilters = {
-      ...defaultFilters,
-      ...(stored ?? {}),
-    };
 
     const urlFilters: Partial<DAGRunsFilters> = {};
     let hasUrlFilters = false;
@@ -461,8 +612,33 @@ function DAGRuns() {
       hasUrlFilters = true;
     }
 
+    let base: DAGRunsFilters = {
+      ...defaultFilters,
+      ...(stored ?? {}),
+    };
+    let nextActiveRunViewId: string | null = null;
+    const requestedViewId = params.get('view');
+    const requestedView =
+      requestedViewId === ALL_RUNS_VIEW_PARAM
+        ? undefined
+        : runViews.find((view) => view.id === requestedViewId);
+    const defaultView =
+      runViews.find((view) => view.id === defaultRunViewId) ?? undefined;
+
+    if (requestedViewId === ALL_RUNS_VIEW_PARAM) {
+      base = cloneFilters(defaultFilters);
+    } else if (requestedView) {
+      base = resolveRunViewFilters(requestedView.filters);
+      nextActiveRunViewId = requestedView.id;
+    } else if (!hasUrlFilters && defaultView) {
+      base = resolveRunViewFilters(defaultView.filters);
+      nextActiveRunViewId = defaultView.id;
+    }
+
     const next = hasUrlFilters ? { ...base, ...urlFilters } : base;
     const current = currentFiltersRef.current;
+
+    setActiveRunViewId(nextActiveRunViewId);
 
     if (current && areFiltersEqual(current, next)) {
       if (hasUrlFilters) {
@@ -494,8 +670,12 @@ function DAGRuns() {
     searchState.writeState('dagRuns', searchStateScope, next);
   }, [
     defaultFilters,
+    defaultRunViewId,
     location.search,
     parseDateFromUrl,
+    resolveRunViewFilters,
+    runViews,
+    runViewsLoading,
     searchState,
     searchStateScope,
   ]);
@@ -596,6 +776,9 @@ function DAGRuns() {
 
   const updateSearchParams = (updates: Record<string, string | undefined>) => {
     const params = new URLSearchParams(location.search);
+    if (!('view' in updates) && activeRunViewId) {
+      params.set('view', activeRunViewId);
+    }
     if ('labels' in updates) {
       params.delete('tags');
     }
@@ -639,6 +822,201 @@ function DAGRuns() {
     });
   };
 
+  const applyRunView = React.useCallback(
+    (view: DAGRunsFilterView) => {
+      setRunViewError(null);
+      const params = new URLSearchParams(location.search);
+      const filters = resolveRunViewFilters(view.filters);
+      for (const key of RUN_FILTER_QUERY_KEYS) {
+        params.delete(key);
+      }
+      params.set('view', view.id);
+      if (filters.searchText) {
+        params.set('name', filters.searchText);
+      }
+      if (filters.dagRunId) {
+        params.set('dagRunId', filters.dagRunId);
+      }
+      if (filters.status && filters.status !== 'all') {
+        params.set('status', filters.status);
+      }
+      if (filters.labels.length > 0) {
+        params.set('labels', filters.labels.join(','));
+      }
+      if (filters.fromDate) {
+        params.set('fromDate', filters.fromDate);
+      }
+      if (filters.toDate) {
+        params.set('toDate', filters.toDate);
+      }
+      params.set('dateMode', filters.dateRangeMode);
+      if (filters.dateRangeMode === 'preset') {
+        params.set('preset', filters.datePreset);
+      } else if (filters.dateRangeMode === 'specific') {
+        params.set('specificValue', filters.specificValue);
+        params.set('specificPeriod', filters.specificPeriod);
+      }
+      const search = params.toString();
+      navigate(
+        { pathname: location.pathname, search: search ? `?${search}` : '' },
+        { replace: true }
+      );
+    },
+    [location.pathname, location.search, navigate, resolveRunViewFilters]
+  );
+
+  const handleSelectRunView = (viewId: string) => {
+    const view = runViews.find((item) => item.id === viewId);
+    if (view) {
+      applyRunView(view);
+    }
+  };
+
+  const handleShowAllRuns = () => {
+    setRunViewError(null);
+    const params = new URLSearchParams(location.search);
+    for (const key of RUN_FILTER_QUERY_KEYS) {
+      params.delete(key);
+    }
+    params.set('view', ALL_RUNS_VIEW_PARAM);
+    const search = params.toString();
+    navigate(
+      { pathname: location.pathname, search: search ? `?${search}` : '' },
+      { replace: true }
+    );
+  };
+
+  const handleResetRunView = () => {
+    const view = runViews.find((item) => item.id === activeRunViewId);
+    if (view) {
+      applyRunView(view);
+    }
+  };
+
+  const handleSaveRunView = async (
+    name: string,
+    makeDefault: boolean,
+    pinned: boolean
+  ): Promise<void> => {
+    const filters = cloneFilters(currentFiltersRef.current);
+    setRunViewError(null);
+    try {
+      const view = await createView(
+        buildRunViewSpec(name, filters, makeDefault, pinned, runViewScope)
+      );
+      applyRunView(dagRunsFilterViewFromView(view));
+    } catch (error) {
+      setRunViewError(
+        error instanceof Error ? error.message : 'Failed to save run view'
+      );
+      throw error;
+    }
+  };
+
+  const handleUpdateRunView = async (): Promise<void> => {
+    const view = scopedRunViews.find((item) => item.id === activeRunViewId);
+    if (!view) {
+      return;
+    }
+    const filters = cloneFilters(currentFiltersRef.current);
+    setRunViewError(null);
+    try {
+      const updated = await updateView(
+        view.id,
+        buildRunViewSpec(
+          view.name,
+          filters,
+          view.isDefault ?? false,
+          view.pinned ?? false,
+          runViewScope
+        )
+      );
+      applyRunView(dagRunsFilterViewFromView(updated));
+    } catch (error) {
+      setRunViewError(
+        error instanceof Error ? error.message : 'Failed to update run view'
+      );
+      throw error;
+    }
+  };
+
+  const handleSetDefaultRunView = async (
+    viewId: string | undefined
+  ): Promise<void> => {
+    const target = scopedRunViews.find(
+      (view) => view.id === (viewId ?? defaultRunViewId)
+    );
+    if (!target) {
+      return;
+    }
+    setRunViewError(null);
+    try {
+      await updateView(
+        target.id,
+        buildRunViewSpec(
+          target.name,
+          dagRunsFilterSetFromView(target),
+          viewId !== undefined,
+          target.pinned ?? false,
+          runViewScope
+        )
+      );
+    } catch (error) {
+      setRunViewError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to update the default run view'
+      );
+      throw error;
+    }
+  };
+
+  const handleSetPinnedRunView = async (
+    viewId: string,
+    pinned: boolean
+  ): Promise<void> => {
+    const target = scopedRunViews.find((view) => view.id === viewId);
+    if (!target) {
+      return;
+    }
+    setRunViewError(null);
+    try {
+      await updateView(
+        target.id,
+        buildRunViewSpec(
+          target.name,
+          dagRunsFilterSetFromView(target),
+          target.isDefault ?? false,
+          pinned,
+          runViewScope
+        )
+      );
+    } catch (error) {
+      setRunViewError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to update the starred run view'
+      );
+      throw error;
+    }
+  };
+
+  const handleDeleteRunView = async (viewId: string): Promise<void> => {
+    const deletingActiveView = viewId === activeRunViewId;
+    setRunViewError(null);
+    try {
+      await deleteView(viewId);
+      if (deletingActiveView) {
+        handleShowAllRuns();
+      }
+    } catch (error) {
+      setRunViewError(
+        error instanceof Error ? error.message : 'Failed to delete run view'
+      );
+      throw error;
+    }
+  };
+
   const handleNameInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchText(e.target.value);
   };
@@ -668,38 +1046,6 @@ function DAGRuns() {
     updatePreference('dagRunsViewMode', newViewMode);
   };
 
-  const getPresetDates = (preset: string): { from: string; to?: string } => {
-    const now = dayjs();
-    const startOfDay =
-      config.tzOffsetInSec !== undefined
-        ? now.utcOffset(config.tzOffsetInSec / 60).startOf('day')
-        : now.startOf('day');
-
-    switch (preset) {
-      case 'today':
-        return { from: startOfDay.format('YYYY-MM-DDTHH:mm') };
-      case 'yesterday':
-        return {
-          from: startOfDay.subtract(1, 'day').format('YYYY-MM-DDTHH:mm'),
-          to: startOfDay.format('YYYY-MM-DDTHH:mm'),
-        };
-      case 'last7days':
-        return {
-          from: startOfDay.subtract(7, 'day').format('YYYY-MM-DDTHH:mm'),
-        };
-      case 'last30days':
-        return {
-          from: startOfDay.subtract(30, 'day').format('YYYY-MM-DDTHH:mm'),
-        };
-      case 'thisWeek':
-        return { from: startOfDay.startOf('week').format('YYYY-MM-DDTHH:mm') };
-      case 'thisMonth':
-        return { from: startOfDay.startOf('month').format('YYYY-MM-DDTHH:mm') };
-      default:
-        return { from: startOfDay.format('YYYY-MM-DDTHH:mm') };
-    }
-  };
-
   const handleDatePresetChange = (preset: string) => {
     setDatePreset(preset);
     const dates = getPresetDates(preset);
@@ -713,35 +1059,6 @@ function DAGRuns() {
       fromDate: dates.from,
       toDate: dates.to,
     });
-  };
-
-  const getSpecificPeriodDates = (
-    period: 'date' | 'month' | 'year',
-    value: string
-  ): { from: string; to?: string } => {
-    switch (period) {
-      case 'date': {
-        const date = dayjs(value);
-        return {
-          from: date.startOf('day').format('YYYY-MM-DDTHH:mm'),
-          to: date.endOf('day').format('YYYY-MM-DDTHH:mm'),
-        };
-      }
-      case 'month': {
-        const date = dayjs(value);
-        return {
-          from: date.startOf('month').format('YYYY-MM-DDTHH:mm'),
-          to: date.endOf('month').format('YYYY-MM-DDTHH:mm'),
-        };
-      }
-      case 'year': {
-        const date = dayjs(value);
-        return {
-          from: date.startOf('year').format('YYYY-MM-DDTHH:mm'),
-          to: date.endOf('year').format('YYYY-MM-DDTHH:mm'),
-        };
-      }
-    }
   };
 
   const getInputTypeForPeriod = (period: 'date' | 'month' | 'year'): string => {
@@ -845,12 +1162,42 @@ function DAGRuns() {
 
   const tzLabel = formatTimezoneOffset();
 
+  const activeRunView = runViews.find((view) => view.id === activeRunViewId);
+  const isRunViewEdited = activeRunView
+    ? !areFiltersEqual(
+        resolveRunViewFilters(activeRunView.filters),
+        currentFilters
+      )
+    : false;
+  const isAllRunsView =
+    activeRunViewId === null && areFiltersEqual(currentFilters, defaultFilters);
+
   return (
     <div className="max-w-7xl">
       <div className="flex items-center justify-between mb-2">
-        <Title>
-          <I18nText text={'Executions'} />
-        </Title>
+        <div className="flex min-w-0 items-center gap-3">
+          <Title>
+            <I18nText text={'Executions'} />
+          </Title>
+          <ViewSelector
+            kind="run"
+            views={runViews}
+            activeViewId={activeRunViewId}
+            defaultViewId={defaultRunViewId}
+            isAllView={isAllRunsView}
+            isActiveViewEdited={isRunViewEdited}
+            canManageViews={canManageRunViews}
+            error={runViewError}
+            onSelectView={handleSelectRunView}
+            onShowAll={handleShowAllRuns}
+            onResetView={handleResetRunView}
+            onSaveView={handleSaveRunView}
+            onUpdateView={handleUpdateRunView}
+            onSetDefault={handleSetDefaultRunView}
+            onSetPinned={handleSetPinnedRunView}
+            onDeleteView={handleDeleteRunView}
+          />
+        </div>
         <I18nProps>
           <ToggleGroup aria-label="View mode" className="h-9 p-0.5">
             <I18nProps>

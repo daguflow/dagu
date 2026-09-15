@@ -2,27 +2,63 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  RunDateMode,
+  RunDatePreset,
+  RunSpecificPeriod,
+  ViewSpecType,
+  ViewWorkspaceScope,
+} from '@/api/v1/schema';
+import type { View } from '@/hooks/useViews';
 import { AppBarContext } from '@/contexts/AppBarContext';
 import { ConfigContext, type Config } from '@/contexts/ConfigContext';
 import { WorkspaceKind } from '@/lib/workspace';
 import DAGRuns from '..';
 
-const { readSearchStateMock, searchStateMock, writeSearchStateMock } =
-  vi.hoisted(() => {
-    const readState = vi.fn(() => null);
-    const writeState = vi.fn();
-    return {
-      readSearchStateMock: readState,
-      searchStateMock: { readState, writeState },
-      writeSearchStateMock: writeState,
-    };
-  });
+const {
+  createRunViewMock,
+  deleteRunViewMock,
+  readSearchStateMock,
+  searchStateMock,
+  sharedRunViewState,
+  updateRunViewMock,
+  writeSearchStateMock,
+} = vi.hoisted(() => {
+  const readState = vi.fn(() => null);
+  const writeState = vi.fn();
+  return {
+    createRunViewMock: vi.fn(),
+    deleteRunViewMock: vi.fn(),
+    updateRunViewMock: vi.fn(),
+    readSearchStateMock: readState,
+    searchStateMock: { readState, writeState },
+    sharedRunViewState: { views: [] as View[] },
+    writeSearchStateMock: writeState,
+  };
+});
 
 vi.mock('@/contexts/SearchStateContext', () => ({
   useSearchState: () => searchStateMock,
+}));
+
+vi.mock('@/contexts/AuthContext', () => ({
+  useCanWriteForWorkspace: () => true,
+}));
+
+vi.mock('@/hooks/useViews', () => ({
+  useViews: () => ({
+    views: sharedRunViewState.views,
+    isLoading: false,
+    error: undefined,
+    createView: createRunViewMock,
+    updateView: updateRunViewMock,
+    deleteView: deleteRunViewMock,
+    refresh: vi.fn(),
+  }),
 }));
 
 vi.mock('@/contexts/UserPreference', () => ({
@@ -89,7 +125,9 @@ vi.mock(
   })
 );
 
-const dagRunTableProps = vi.hoisted(() => ({ current: {} as { isLoading?: boolean } }));
+const dagRunTableProps = vi.hoisted(() => ({
+  current: {} as { isLoading?: boolean },
+}));
 
 vi.mock('@/features/dag-runs/components/dag-run-list/DAGRunTable', () => ({
   default: (props: {
@@ -100,21 +138,21 @@ vi.mock('@/features/dag-runs/components/dag-run-list/DAGRunTable', () => ({
     dagRunTableProps.current = props;
     const { onSelectDAGRun, onViewArtifacts } = props;
     return (
-    <div>
-      <div>Run Table</div>
-      <button
-        type="button"
-        onClick={() => onSelectDAGRun({ name: 'demo', dagRunId: 'run-1' })}
-      >
-        Open run
-      </button>
-      <button
-        type="button"
-        onClick={() => onViewArtifacts({ name: 'demo', dagRunId: 'run-1' })}
-      >
-        Open artifacts
-      </button>
-    </div>
+      <div>
+        <div>Run Table</div>
+        <button
+          type="button"
+          onClick={() => onSelectDAGRun({ name: 'demo', dagRunId: 'run-1' })}
+        >
+          Open run
+        </button>
+        <button
+          type="button"
+          onClick={() => onViewArtifacts({ name: 'demo', dagRunId: 'run-1' })}
+        >
+          Open artifacts
+        </button>
+      </div>
     );
   },
 }));
@@ -127,6 +165,10 @@ beforeEach(() => {
   readSearchStateMock.mockReset();
   readSearchStateMock.mockReturnValue(null);
   writeSearchStateMock.mockReset();
+  createRunViewMock.mockReset();
+  updateRunViewMock.mockReset();
+  deleteRunViewMock.mockReset();
+  sharedRunViewState.views = [];
   usePaginatedDAGRunsMock.mockReset();
   usePaginatedDAGRunsMock.mockReturnValue({
     dagRuns: [],
@@ -149,6 +191,33 @@ beforeEach(() => {
     })),
   });
 });
+
+function makeRunView(overrides: Partial<View> = {}): View {
+  return {
+    id: 'failed-runs',
+    name: 'Failed runs',
+    type: ViewSpecType.run,
+    intervalDays: 1,
+    dagName: '',
+    labels: [],
+    runStatus: '5',
+    dateMode: RunDateMode.preset,
+    datePreset: RunDatePreset.today,
+    specificPeriod: RunSpecificPeriod.date,
+    specificValue: '',
+    pinned: false,
+    workspace: '',
+    workspaceScope: ViewWorkspaceScope.all,
+    createdAt: '2026-09-15T00:00:00Z',
+    updatedAt: '2026-09-15T00:00:00Z',
+    ...overrides,
+  };
+}
+
+function lastRunQuery(): Record<string, unknown> {
+  const calls = usePaginatedDAGRunsMock.mock.calls;
+  return calls[calls.length - 1]?.[0]?.query ?? {};
+}
 
 function LocationProbe(): React.JSX.Element {
   const location = useLocation();
@@ -339,5 +408,167 @@ describe('DAGRuns page', () => {
     expect(screen.getByRole('dialog')).toHaveTextContent(
       'Run modal for demo/run-1 on artifacts'
     );
+  });
+
+  it('applies the default run view to the first request', async () => {
+    sharedRunViewState.views.push(
+      makeRunView({
+        isDefault: true,
+        dagName: 'deploy',
+      })
+    );
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(lastRunQuery()['name']).toBe('deploy');
+      expect(lastRunQuery()['status']).toEqual([5]);
+      expect(lastRunQuery()['fromDate']).toBeTypeOf('number');
+    });
+    expect(
+      screen.getByRole('button', { name: 'Run view: Failed runs' })
+    ).toBeVisible();
+  });
+
+  it('uses the bookmarked run view from the URL', async () => {
+    sharedRunViewState.views.push(
+      makeRunView({
+        id: 'url-view',
+        name: 'Nightly runs',
+        runStatus: '1',
+        dagName: 'nightly',
+      })
+    );
+
+    renderPage(vi.fn(), '/dag-runs?view=url-view');
+
+    await waitFor(() => {
+      expect(lastRunQuery()['name']).toBe('nightly');
+      expect(lastRunQuery()['status']).toEqual([1]);
+    });
+    expect(
+      screen.getByRole('button', { name: 'Run view: Nightly runs' })
+    ).toBeVisible();
+  });
+
+  it('gives explicit URL filters precedence over the requested run view', async () => {
+    sharedRunViewState.views.push(
+      makeRunView({ id: 'view-a', name: 'View A', runStatus: '5' })
+    );
+
+    renderPage(vi.fn(), '/dag-runs?view=view-a&name=adhoc&status=1');
+
+    await waitFor(() => {
+      expect(lastRunQuery()['name']).toBe('adhoc');
+      expect(lastRunQuery()['status']).toEqual([1]);
+    });
+    expect(
+      screen.getByRole('button', { name: 'Run view: View A' })
+    ).toBeVisible();
+  });
+
+  it('saves the current filters as a run view and applies it', async () => {
+    const user = userEvent.setup();
+    createRunViewMock.mockResolvedValue(
+      makeRunView({ id: 'nightly-view', name: 'Nightly runs' })
+    );
+
+    renderPage();
+
+    fireEvent.change(screen.getByPlaceholderText('Filter by DAG name...'), {
+      target: { value: 'nightly' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    await waitFor(() => {
+      expect(locationSearchParams().get('name')).toBe('nightly');
+    });
+
+    await user.click(
+      screen.getByRole('button', { name: 'Run view: Custom view' })
+    );
+    await user.click(
+      screen.getByRole('menuitem', {
+        name: 'Save current filters as view…',
+      })
+    );
+    await user.type(
+      screen.getByRole('textbox', { name: 'Name' }),
+      'Nightly runs'
+    );
+    await user.click(screen.getByRole('button', { name: 'Save view' }));
+
+    await waitFor(() => {
+      expect(createRunViewMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: ViewSpecType.run,
+          name: 'Nightly runs',
+          dagName: 'nightly',
+          intervalDays: 1,
+        })
+      );
+    });
+    expect(locationSearchParams().get('view')).toBe('nightly-view');
+  });
+
+  it('marks a run view as edited when its filters change and resets via the menu', async () => {
+    const user = userEvent.setup();
+    sharedRunViewState.views.push(makeRunView({ dagName: 'deploy' }));
+
+    renderPage(vi.fn(), '/dag-runs?view=failed-runs');
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: 'Run view: Failed runs' })
+      ).toBeVisible();
+    });
+    expect(screen.queryByText('Edited')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText('Filter by DAG name...'), {
+      target: { value: 'etl' },
+    });
+    expect(screen.getByText('Edited')).toBeVisible();
+
+    await user.click(
+      screen.getByRole('button', { name: 'Run view: Failed runs' })
+    );
+    await user.click(screen.getByRole('menuitem', { name: 'Reset changes' }));
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Filter by DAG name...')).toHaveValue(
+        'deploy'
+      );
+    });
+  });
+
+  it('deletes the active run view and falls back to All runs', async () => {
+    const user = userEvent.setup();
+    sharedRunViewState.views.push(makeRunView({ dagName: 'deploy' }));
+    deleteRunViewMock.mockResolvedValue(undefined);
+
+    renderPage(vi.fn(), '/dag-runs?view=failed-runs');
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: 'Run view: Failed runs' })
+      ).toBeVisible();
+    });
+
+    await user.click(
+      screen.getByRole('button', { name: 'Run view: Failed runs' })
+    );
+    await user.click(screen.getByRole('menuitem', { name: 'Manage views…' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Delete Failed runs' })
+    );
+    await user.click(
+      await screen.findByRole('button', { name: 'Delete view' })
+    );
+
+    await waitFor(() => {
+      expect(deleteRunViewMock).toHaveBeenCalledWith('failed-runs');
+    });
+    await waitFor(() => {
+      expect(locationSearchParams().get('view')).toBe('all');
+    });
   });
 });
