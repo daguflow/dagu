@@ -531,23 +531,21 @@ function DAGRuns() {
     [defaultFilters, getPresetDates, getSpecificPeriodDates]
   );
 
-  const previousRunScopeRef = React.useRef<string | null>(null);
+  const previousRunScopeRef = React.useRef(searchStateScope);
 
   React.useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const previousScope = previousRunScopeRef.current;
-    const scopeChanged =
-      previousScope !== null && previousScope !== searchStateScope;
-    previousRunScopeRef.current = searchStateScope;
-
     if (runViewsLoading) {
       return;
     }
 
     // URL parameters belong to the previous workspace when the scope has
     // just changed; drop them and start from the destination's default view
-    // (or All runs), so another workspace's filters cannot leak in.
+    // (or All runs), so another workspace's filters cannot leak in. The ref
+    // is only advanced once the cleanup actually runs, so a scope change
+    // during view loading is still honored once loading completes.
+    const scopeChanged = previousRunScopeRef.current !== searchStateScope;
     if (scopeChanged) {
+      previousRunScopeRef.current = searchStateScope;
       setRunViewError(null);
       const clean = new URLSearchParams();
       clean.set('view', defaultRunViewId ?? ALL_RUNS_VIEW_PARAM);
@@ -558,6 +556,7 @@ function DAGRuns() {
       return;
     }
 
+    const params = new URLSearchParams(location.search);
     const stored = searchState.readState<DAGRunsFilters>(
       'dagRuns',
       searchStateScope
@@ -737,34 +736,6 @@ function DAGRuns() {
     lastPersistedFiltersRef.current = currentFilters;
     searchState.writeState('dagRuns', searchStateScope, currentFilters);
   }, [currentFilters, searchState, searchStateScope]);
-
-  // When the remote or workspace changes, the URL still describes the
-  // previous scope: its view and filter parameters would override the
-  // destination scope's default view. Drop them and let the destination
-  // scope's default view (or All runs) apply.
-  const previousFilterScopeRef = React.useRef(searchStateScope);
-  React.useEffect(() => {
-    if (previousFilterScopeRef.current === searchStateScope) {
-      return;
-    }
-    previousFilterScopeRef.current = searchStateScope;
-    const params = new URLSearchParams(location.search);
-    for (const key of RUN_FILTER_QUERY_KEYS) {
-      params.delete(key);
-    }
-    params.set('view', defaultRunViewId ?? ALL_RUNS_VIEW_PARAM);
-    const search = params.toString();
-    navigate(
-      { pathname: location.pathname, search: search ? `?${search}` : '' },
-      { replace: true }
-    );
-  }, [
-    defaultRunViewId,
-    location.pathname,
-    location.search,
-    navigate,
-    searchStateScope,
-  ]);
 
   React.useEffect(() => {
     appBarContext.setTitle('Executions');
