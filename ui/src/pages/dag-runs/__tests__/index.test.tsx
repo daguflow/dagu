@@ -17,7 +17,7 @@ import {
 import type { View } from '@/hooks/useViews';
 import { AppBarContext } from '@/contexts/AppBarContext';
 import { ConfigContext, type Config } from '@/contexts/ConfigContext';
-import { WorkspaceKind } from '@/lib/workspace';
+import { WorkspaceKind, type WorkspaceSelection } from '@/lib/workspace';
 import DAGRuns from '..';
 
 const {
@@ -250,6 +250,47 @@ function renderPage(setTitle = vi.fn(), initialEntry = '/dag-runs'): void {
       </ConfigContext.Provider>
     </MemoryRouter>
   );
+}
+
+type WorkspaceSwitcher = {
+  selection: WorkspaceSelection;
+  switchWorkspace: (selection: WorkspaceSelection) => void;
+};
+
+function renderPageWithSwitcher(initialEntry = '/dag-runs'): WorkspaceSwitcher {
+  const holder: WorkspaceSwitcher = {
+    selection: { kind: WorkspaceKind.all },
+    switchWorkspace: () => {},
+  };
+
+  function Host(): React.ReactElement {
+    const [, setTick] = React.useState(0);
+    holder.switchWorkspace = (selection) => {
+      holder.selection = selection;
+      setTick((tick) => tick + 1);
+    };
+    return (
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <LocationProbe />
+        <ConfigContext.Provider value={config}>
+          <AppBarContext.Provider
+            value={
+              {
+                setTitle: vi.fn(),
+                selectedRemoteNode: 'local',
+                workspaceSelection: holder.selection,
+              } as never
+            }
+          >
+            <DAGRuns />
+          </AppBarContext.Provider>
+        </ConfigContext.Provider>
+      </MemoryRouter>
+    );
+  }
+
+  render(<Host />);
+  return holder;
 }
 
 describe('DAGRuns page', () => {
@@ -583,6 +624,122 @@ describe('DAGRuns page', () => {
       expect(lastRunQuery()['fromDate']).toBe(dayjs('2026-09-15T00:00').unix());
       expect(lastRunQuery()['toDate']).toBe(dayjs('2026-09-15T23:59').unix());
     });
+  });
+
+  it('keeps a legacy concrete range when searching after a legacy restore', async () => {
+    renderPage(
+      vi.fn(),
+      '/dag-runs?fromDate=2026-09-01T00%3A00&toDate=2026-09-15T23%3A59'
+    );
+
+    await waitFor(() => {
+      expect(lastRunQuery()['fromDate']).toBe(dayjs('2026-09-01T00:00').unix());
+    });
+
+    fireEvent.change(screen.getByPlaceholderText('Filter by DAG name...'), {
+      target: { value: 'etl' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+
+    await waitFor(() => {
+      expect(lastRunQuery()['name']).toBe('etl');
+      expect(lastRunQuery()['fromDate']).toBe(dayjs('2026-09-01T00:00').unix());
+      expect(lastRunQuery()['toDate']).toBe(dayjs('2026-09-15T23:59').unix());
+    });
+  });
+
+  it('honors cleared filters when a saved view is active', async () => {
+    sharedRunViewState.views.push(
+      makeRunView({ dagName: 'deploy', dagRunId: 'run-9' })
+    );
+
+    renderPage(vi.fn(), '/dag-runs?view=failed-runs');
+
+    await waitFor(() => {
+      expect(lastRunQuery()['name']).toBe('deploy');
+      expect(lastRunQuery()['dagRunId']).toBe('run-9');
+    });
+
+    fireEvent.change(screen.getByPlaceholderText('Filter by DAG name...'), {
+      target: { value: '' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    await waitFor(() => {
+      expect(lastRunQuery()['name']).toBeUndefined();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText('Filter by Run ID...'), {
+      target: { value: '' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    await waitFor(() => {
+      expect(lastRunQuery()['dagRunId']).toBeUndefined();
+    });
+  });
+
+  it('switches workspaces to the destination default run view', async () => {
+    sharedRunViewState.views.push(
+      makeRunView({
+        id: 'a-view',
+        name: 'Workspace A view',
+        dagName: 'a-dag',
+        workspace: 'a',
+        workspaceScope: ViewWorkspaceScope.workspace,
+        isDefault: true,
+      })
+    );
+    sharedRunViewState.views.push(
+      makeRunView({
+        id: 'b-view',
+        name: 'Workspace B view',
+        dagName: 'b-dag',
+        workspace: 'b',
+        workspaceScope: ViewWorkspaceScope.workspace,
+        isDefault: true,
+      })
+    );
+
+    const setTitle = vi.fn();
+    function Harness(): React.JSX.Element {
+      const [workspace, setWorkspace] = React.useState('a');
+      return (
+        <MemoryRouter initialEntries={['/dag-runs?view=a-view']}>
+          <LocationProbe />
+          <button type="button" onClick={() => setWorkspace('b')}>
+            Switch to workspace B
+          </button>
+          <ConfigContext.Provider value={config}>
+            <AppBarContext.Provider
+              value={
+                {
+                  setTitle,
+                  selectedRemoteNode: 'local',
+                  workspaceSelection: {
+                    kind: WorkspaceKind.workspace,
+                    workspace,
+                  },
+                } as never
+              }
+            >
+              <DAGRuns />
+            </AppBarContext.Provider>
+          </ConfigContext.Provider>
+        </MemoryRouter>
+      );
+    }
+    render(<Harness />);
+
+    await waitFor(() => {
+      expect(lastRunQuery()['name']).toBe('a-dag');
+    });
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Switch to workspace B' })
+    );
+    await waitFor(() => {
+      expect(lastRunQuery()['name']).toBe('b-dag');
+    });
+    expect(locationSearchParams().get('view')).toBe('b-view');
   });
 
   it('ignores stale concrete dates for preset views and derives them fresh', async () => {

@@ -531,11 +531,33 @@ function DAGRuns() {
     [defaultFilters, getPresetDates, getSpecificPeriodDates]
   );
 
+  const previousRunScopeRef = React.useRef<string | null>(null);
+
   React.useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const previousScope = previousRunScopeRef.current;
+    const scopeChanged =
+      previousScope !== null && previousScope !== searchStateScope;
+    previousRunScopeRef.current = searchStateScope;
+
     if (runViewsLoading) {
       return;
     }
-    const params = new URLSearchParams(location.search);
+
+    // URL parameters belong to the previous workspace when the scope has
+    // just changed; drop them and start from the destination's default view
+    // (or All runs), so another workspace's filters cannot leak in.
+    if (scopeChanged) {
+      setRunViewError(null);
+      const clean = new URLSearchParams();
+      clean.set('view', defaultRunViewId ?? ALL_RUNS_VIEW_PARAM);
+      navigate(
+        { pathname: location.pathname, search: `?${clean.toString()}` },
+        { replace: true }
+      );
+      return;
+    }
+
     const stored = searchState.readState<DAGRunsFilters>(
       'dagRuns',
       searchStateScope
@@ -583,8 +605,9 @@ function DAGRuns() {
 
     // Concrete dates are only meaningful for a custom range; preset and
     // specific modes keep their relative parameters and derive dates fresh.
-    // Legacy URLs may carry concrete dates without a dateMode at all, which
-    // remain honored.
+    // Legacy URLs may carry concrete dates without a dateMode at all — no
+    // relative preset can reproduce them, so they are honored as a custom
+    // range.
     const usesConcreteDates =
       dateModeParam === 'custom' || dateModeParam === null;
     if (usesConcreteDates && params.has('fromDate')) {
@@ -594,6 +617,17 @@ function DAGRuns() {
 
     if (usesConcreteDates && params.has('toDate')) {
       urlFilters.toDate = parseDateFromUrl(params.get('toDate'));
+      hasUrlFilters = true;
+    }
+
+    // A URL that carries concrete dates without a dateMode represents a
+    // custom range: keep that mode so a later search does not re-derive the
+    // historical dates from a relative preset.
+    if (
+      dateModeParam === null &&
+      (params.has('fromDate') || params.has('toDate'))
+    ) {
+      urlFilters.dateRangeMode = 'custom';
       hasUrlFilters = true;
     }
 
@@ -686,6 +720,7 @@ function DAGRuns() {
     defaultFilters,
     defaultRunViewId,
     location.search,
+    navigate,
     parseDateFromUrl,
     resolveRunViewFilters,
     runViews,
@@ -702,6 +737,34 @@ function DAGRuns() {
     lastPersistedFiltersRef.current = currentFilters;
     searchState.writeState('dagRuns', searchStateScope, currentFilters);
   }, [currentFilters, searchState, searchStateScope]);
+
+  // When the remote or workspace changes, the URL still describes the
+  // previous scope: its view and filter parameters would override the
+  // destination scope's default view. Drop them and let the destination
+  // scope's default view (or All runs) apply.
+  const previousFilterScopeRef = React.useRef(searchStateScope);
+  React.useEffect(() => {
+    if (previousFilterScopeRef.current === searchStateScope) {
+      return;
+    }
+    previousFilterScopeRef.current = searchStateScope;
+    const params = new URLSearchParams(location.search);
+    for (const key of RUN_FILTER_QUERY_KEYS) {
+      params.delete(key);
+    }
+    params.set('view', defaultRunViewId ?? ALL_RUNS_VIEW_PARAM);
+    const search = params.toString();
+    navigate(
+      { pathname: location.pathname, search: search ? `?${search}` : '' },
+      { replace: true }
+    );
+  }, [
+    defaultRunViewId,
+    location.pathname,
+    location.search,
+    navigate,
+    searchStateScope,
+  ]);
 
   React.useEffect(() => {
     appBarContext.setTitle('Executions');
@@ -797,7 +860,9 @@ function DAGRuns() {
       params.delete('tags');
     }
     for (const [key, value] of Object.entries(updates)) {
-      if (value) {
+      // An explicit empty string overrides a saved view's value; only
+      // undefined removes the parameter.
+      if (value !== undefined) {
         params.set(key, value);
       } else {
         params.delete(key);
@@ -809,6 +874,9 @@ function DAGRuns() {
       search: search ? `?${search}` : '',
     });
   };
+
+  const searchOverrideKey = (value: string): string | undefined =>
+    activeRunViewId !== null ? value : value.length > 0 ? value : undefined;
 
   const handleSearch = (overrideStatus?: string) => {
     // Use override status if provided, otherwise use current status
@@ -823,10 +891,10 @@ function DAGRuns() {
     setApiToDate(toDate);
 
     updateSearchParams({
-      name: searchText,
-      dagRunId,
+      name: searchOverrideKey(searchText),
+      dagRunId: searchOverrideKey(dagRunId),
       status: statusToUse,
-      labels: selectedLabels.length > 0 ? selectedLabels.join(',') : undefined,
+      labels: searchOverrideKey(selectedLabels.join(',')),
       fromDate,
       toDate,
       dateMode: dateRangeMode,
@@ -1054,7 +1122,7 @@ function DAGRuns() {
     setSelectedLabels(newLabels);
     setApiLabels(newLabels);
     updateSearchParams({
-      labels: newLabels.length > 0 ? newLabels.join(',') : undefined,
+      labels: searchOverrideKey(newLabels.join(',')),
     });
   };
 
