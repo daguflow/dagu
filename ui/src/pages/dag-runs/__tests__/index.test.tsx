@@ -17,7 +17,7 @@ import {
 import type { View } from '@/hooks/useViews';
 import { AppBarContext } from '@/contexts/AppBarContext';
 import { ConfigContext, type Config } from '@/contexts/ConfigContext';
-import { WorkspaceKind, type WorkspaceSelection } from '@/lib/workspace';
+import { WorkspaceKind } from '@/lib/workspace';
 import DAGRuns from '..';
 
 const {
@@ -250,47 +250,6 @@ function renderPage(setTitle = vi.fn(), initialEntry = '/dag-runs'): void {
       </ConfigContext.Provider>
     </MemoryRouter>
   );
-}
-
-type WorkspaceSwitcher = {
-  selection: WorkspaceSelection;
-  switchWorkspace: (selection: WorkspaceSelection) => void;
-};
-
-function renderPageWithSwitcher(initialEntry = '/dag-runs'): WorkspaceSwitcher {
-  const holder: WorkspaceSwitcher = {
-    selection: { kind: WorkspaceKind.all },
-    switchWorkspace: () => {},
-  };
-
-  function Host(): React.ReactElement {
-    const [, setTick] = React.useState(0);
-    holder.switchWorkspace = (selection) => {
-      holder.selection = selection;
-      setTick((tick) => tick + 1);
-    };
-    return (
-      <MemoryRouter initialEntries={[initialEntry]}>
-        <LocationProbe />
-        <ConfigContext.Provider value={config}>
-          <AppBarContext.Provider
-            value={
-              {
-                setTitle: vi.fn(),
-                selectedRemoteNode: 'local',
-                workspaceSelection: holder.selection,
-              } as never
-            }
-          >
-            <DAGRuns />
-          </AppBarContext.Provider>
-        </ConfigContext.Provider>
-      </MemoryRouter>
-    );
-  }
-
-  render(<Host />);
-  return holder;
 }
 
 describe('DAGRuns page', () => {
