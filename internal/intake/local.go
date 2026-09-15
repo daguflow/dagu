@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dagucloud/dagu/v2/internal/cmn/artifactpath"
 	"github.com/dagucloud/dagu/v2/internal/cmn/logger"
 	"github.com/dagucloud/dagu/v2/internal/cmn/logger/tag"
 	"github.com/dagucloud/dagu/v2/internal/cmn/logpath"
@@ -190,5 +191,5 @@ func localArtifactDir(ctx context.Context, req LocalRequest) (string, error) {
 	if !req.DAG.ArtifactsEnabled() {
 		return "", nil
 	}
-	return logpath.GenerateDir(ctx, req.ArtifactBaseDir, req.DAG.Artifacts.Dir, req.DAG.Name, req.DAGRunID)
+	return artifactpath.NewRunDir(ctx, req.ArtifactBaseDir, req.DAG.Artifacts.Dir, req.DAG.Name, req.DAGRunID, time.Now())
 }

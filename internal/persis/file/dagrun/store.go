@@ -85,6 +85,13 @@ func NewStore(baseDir string, opts ...StoreOption) *Store {
 	}
 }
 
+// dataRoot opens a DAG's run tree with the configured artifact root attached,
+// which every caller needs so that artifact paths resolve against the root the
+// deployment configured rather than one inferred from the run directory.
+func (store *Store) dataRoot(dagName string) DataRoot {
+	return NewDataRootWithArtifactDir(store.baseDir, dagName, store.artifactDir)
+}
+
 // resolveStatus resolves and filters a DAGRunStatus for a single dagRun.
 // Uses the index summary for fast filtering when available, falling back to
 // reading status.jsonl directly.
@@ -185,7 +192,7 @@ func (store *Store) CompareAndSwapLatestAttemptStatus(
 	rootRef := req.RootDAGRun
 	isSubDAG := rootRef.ID != dagRun.ID || rootRef.Name != dagRun.Name
 
-	root := NewDataRoot(store.baseDir, rootRef.Name)
+	root := store.dataRoot(rootRef.Name)
 	lockCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
@@ -258,7 +265,7 @@ func (store *Store) CreateAttempt(ctx context.Context, req persis.DAGRunCreateAt
 		return store.newChildAttempt(ctx, req)
 	}
 
-	dataRoot := NewDataRoot(store.baseDir, req.DAG.Name)
+	dataRoot := store.dataRoot(req.DAG.Name)
 	ts := persis.NewUTC(req.Timestamp)
 
 	lockCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -304,7 +311,7 @@ func (store *Store) CreateAttempt(ctx context.Context, req persis.DAGRunCreateAt
 }
 
 func (store *Store) newChildAttempt(ctx context.Context, req persis.DAGRunCreateAttemptRequest) (dagrun.Attempt, error) {
-	dataRoot := NewDataRoot(store.baseDir, req.RootDAGRun.Name)
+	dataRoot := store.dataRoot(req.RootDAGRun.Name)
 	lockCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if err := dataRoot.Lock(lockCtx); err != nil {
@@ -350,7 +357,7 @@ func (store *Store) newChildAttempt(ctx context.Context, req persis.DAGRunCreate
 
 // RecentStatuses returns the newest readable status for recent DAG runs.
 func (store *Store) RecentStatuses(ctx context.Context, dagName string, itemLimit int) ([]ir.DAGRunStatus, error) {
-	root := NewDataRoot(store.baseDir, dagName)
+	root := store.dataRoot(dagName)
 	items, err := root.listRecentDAGRuns(ctx, itemLimit)
 	if err != nil {
 		return nil, err
@@ -376,7 +383,7 @@ func (store *Store) RecentStatuses(ctx context.Context, dagName string, itemLimi
 
 // LatestAttempt returns the newest visible attempt matching the query.
 func (store *Store) LatestAttempt(ctx context.Context, query persis.DAGRunLatestAttemptQuery) (dagrun.Attempt, error) {
-	root := NewDataRoot(store.baseDir, query.Name)
+	root := store.dataRoot(query.Name)
 
 	if !query.NotBefore.IsZero() {
 		if attempt, err := root.latestAttemptFromPointer(ctx, store.cache, query.NotBefore); err == nil {
@@ -417,7 +424,7 @@ func (store *Store) LatestAttempt(ctx context.Context, query persis.DAGRunLatest
 
 // FindAttempt finds the latest attempt by DAG-run ID.
 func (store *Store) FindAttempt(ctx context.Context, ref ir.DAGRunRef) (dagrun.Attempt, error) {
-	root := NewDataRoot(store.baseDir, ref.Name)
+	root := store.dataRoot(ref.Name)
 	run, err := root.FindByDAGRunID(ctx, ref.ID)
 	if err != nil {
 		return nil, err
@@ -429,7 +436,7 @@ func (store *Store) FindAttempt(ctx context.Context, ref ir.DAGRunRef) (dagrun.A
 // FindSubAttempt finds a sub dag-run by its ID.
 // It returns the latest attempt for the specified sub DAG-run ID.
 func (store *Store) FindSubAttempt(ctx context.Context, ref ir.DAGRunRef, subDAGRunID string) (dagrun.Attempt, error) {
-	root := NewDataRoot(store.baseDir, ref.Name)
+	root := store.dataRoot(ref.Name)
 	dagRun, err := root.FindByDAGRunID(ctx, ref.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find execution: %w", err)
@@ -444,7 +451,7 @@ func (store *Store) FindSubAttempt(ctx context.Context, ref ir.DAGRunRef, subDAG
 
 // RemoveOldDAGRuns removes final runs outside a normalized retention policy.
 func (store *Store) RemoveOldDAGRuns(ctx context.Context, req persis.DAGRunRetentionRequest) ([]ir.DAGRunRef, error) {
-	root := NewDataRootWithArtifactDir(store.baseDir, req.Name, store.artifactDir)
+	root := store.dataRoot(req.Name)
 	var (
 		ids []string
 		err error
@@ -464,7 +471,7 @@ func (store *Store) RemoveOldDAGRuns(ctx context.Context, req persis.DAGRunReten
 // RemoveDAGRun removes a DAG run and all of its attempts.
 func (store *Store) RemoveDAGRun(ctx context.Context, req persis.DAGRunRemoveRequest) error {
 	dagRun := req.DAGRun
-	root := NewDataRootWithArtifactDir(store.baseDir, dagRun.Name, store.artifactDir)
+	root := store.dataRoot(dagRun.Name)
 	if err := root.Lock(ctx); err != nil {
 		return fmt.Errorf("failed to acquire lock for dag-run %s: %w", dagRun.ID, err)
 	}
@@ -517,7 +524,7 @@ func (store *Store) listRoot(_ context.Context, include string) ([]DataRoot, err
 			continue
 		}
 		if fileutil.IsDir(filepath.Join(store.baseDir, dir)) {
-			root := NewDataRoot(store.baseDir, dir)
+			root := store.dataRoot(dir)
 			roots = append(roots, root)
 		}
 	}

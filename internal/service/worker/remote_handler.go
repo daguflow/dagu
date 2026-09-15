@@ -20,7 +20,6 @@ import (
 	"github.com/dagucloud/dagu/v2/internal/cmn/fileutil"
 	"github.com/dagucloud/dagu/v2/internal/cmn/logger"
 	"github.com/dagucloud/dagu/v2/internal/cmn/logger/tag"
-	"github.com/dagucloud/dagu/v2/internal/cmn/logpath"
 	"github.com/dagucloud/dagu/v2/internal/cmn/stringutil"
 	"github.com/dagucloud/dagu/v2/internal/dagrun"
 	"github.com/dagucloud/dagu/v2/internal/dispatch"
@@ -585,17 +584,12 @@ func (h *remoteTaskHandler) createAgentEnv(ctx context.Context, dag *ir.DAG, dag
 		return nil, fmt.Errorf("failed to create log directory: %w", err)
 	}
 
+	// Staging only. The coordinator assigns the durable path when it persists
+	// the reported status, so this name never needs to match the server tree.
 	artifactDir := ""
 	if dag != nil && dag.ArtifactsEnabled() {
-		var err error
-		artifactDir, err = logpath.GenerateDir(
-			ctx,
-			filepath.Join(os.TempDir(), "dagu", "worker-artifacts", h.workerID),
-			"",
-			dag.Name,
-			dagRunID,
-		)
-		if err != nil {
+		artifactDir = filepath.Join(os.TempDir(), "dagu", "worker-artifacts", h.workerID, dagRunID)
+		if err := os.MkdirAll(artifactDir, 0o750); err != nil {
 			return nil, fmt.Errorf("failed to create artifact directory: %w", err)
 		}
 	}

@@ -18,6 +18,7 @@ import (
 
 	api "github.com/dagucloud/dagu/v2/api/v1"
 	"github.com/dagucloud/dagu/v2/internal/audit"
+	"github.com/dagucloud/dagu/v2/internal/cmn/artifactpath"
 	"github.com/dagucloud/dagu/v2/internal/cmn/collections"
 	"github.com/dagucloud/dagu/v2/internal/cmn/config"
 	"github.com/dagucloud/dagu/v2/internal/cmn/logger"
@@ -1064,7 +1065,7 @@ func editRetryArtifactDir(ctx context.Context, baseDir string, dag *ir.DAG, dagR
 	if dag.Artifacts != nil {
 		dagArtifactDir = dag.Artifacts.Dir
 	}
-	artifactDir, err := logpath.GenerateDir(ctx, baseDir, dagArtifactDir, dag.Name, dagRunID)
+	artifactDir, err := artifactpath.NewRunDir(ctx, baseDir, dagArtifactDir, dag.Name, dagRunID, time.Now())
 	if err != nil {
 		return "", fmt.Errorf("failed to generate edit retry artifact directory: %w", err)
 	}

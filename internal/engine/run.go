@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dagucloud/dagu/v2/internal/cmn/artifactpath"
 	"github.com/dagucloud/dagu/v2/internal/cmn/config"
 	"github.com/dagucloud/dagu/v2/internal/cmn/fileutil"
 	"github.com/dagucloud/dagu/v2/internal/cmn/logger"
@@ -706,7 +707,7 @@ func (e *Engine) artifactDir(ctx context.Context, dag *ir.DAG, runID string) (st
 	if dag.Artifacts != nil {
 		dagArtifactDir = dag.Artifacts.Dir
 	}
-	return logpath.GenerateDir(ctx, e.cfg.Paths.ArtifactDir, dagArtifactDir, dag.Name, runID)
+	return artifactpath.NewRunDir(ctx, e.cfg.Paths.ArtifactDir, dagArtifactDir, dag.Name, runID, time.Now())
 }
 
 func (e *Engine) runtimeStores(ctx context.Context) RuntimeStores {

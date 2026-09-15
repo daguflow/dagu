@@ -13,9 +13,11 @@ import (
 	"path/filepath"
 	goruntime "runtime"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/dagucloud/dagu/v2/internal/cmn/artifactpath"
 	"github.com/dagucloud/dagu/v2/internal/cmn/config"
 	"github.com/dagucloud/dagu/v2/internal/dagrun"
 	"github.com/dagucloud/dagu/v2/internal/ir"
@@ -786,6 +788,18 @@ func getLogContent(t *testing.T, logPath string) string {
 	content, err := os.ReadFile(logPath)
 	require.NoError(t, err, "failed to read log file")
 	return string(content)
+}
+
+// assertArtifactDirInTree checks that a worker's artifacts landed in the
+// coordinator's date-partitioned tree under an entry naming the DAG.
+func assertArtifactDirInTree(t *testing.T, f *testFixture, archiveDir string) {
+	t.Helper()
+
+	assert.True(t, strings.HasPrefix(archiveDir, f.artifactDir()+string(os.PathSeparator)),
+		"artifact directory %q is outside the coordinator artifact tree", archiveDir)
+	parsed, ok := artifactpath.ParseRunDirName(filepath.Base(archiveDir))
+	require.True(t, ok, "artifact directory %q does not use the run directory layout", archiveDir)
+	assert.Equal(t, f.dagWrapper.Name, parsed.DAGName)
 }
 
 func assertArtifactContains(t *testing.T, archiveDir, relativePath, expected string) {

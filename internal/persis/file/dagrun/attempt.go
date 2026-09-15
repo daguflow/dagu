@@ -19,11 +19,13 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dagucloud/dagu/v2/internal/cmn/artifactpath"
 	"github.com/dagucloud/dagu/v2/internal/cmn/fileutil"
 	"github.com/dagucloud/dagu/v2/internal/cmn/logger"
 	"github.com/dagucloud/dagu/v2/internal/cmn/logger/tag"
 	"github.com/dagucloud/dagu/v2/internal/dagrun"
 	"github.com/dagucloud/dagu/v2/internal/ir"
+	"github.com/dagucloud/dagu/v2/internal/persis/file/artifact"
 )
 
 // Error definitions for common issues
@@ -60,6 +62,20 @@ type Attempt struct {
 	cache     *fileutil.Cache[*ir.DAGRunStatus] // Optional cache for read operations
 	isClosing atomic.Bool                       // Flag to prevent writes during Close/Compact
 	dag       *ir.DAG                           // DAG associated with the status file
+
+	// artifactRoot is the configured global artifact directory, where this
+	// attempt records its run in the artifact index. Empty disables indexing.
+	artifactRoot string
+}
+
+// AttemptOption configures an Attempt.
+type AttemptOption func(*Attempt)
+
+// WithArtifactRoot sets the global artifact directory used for index records.
+func WithArtifactRoot(dir string) AttemptOption {
+	return func(att *Attempt) {
+		att.artifactRoot = dir
+	}
 }
 
 // ID implements models.Attempt.
@@ -73,13 +89,19 @@ func (att *Attempt) SetDAG(dag *ir.DAG) {
 }
 
 // NewAttempt creates a new Run for the specified file.
-func NewAttempt(file string, cache *fileutil.Cache[*ir.DAGRunStatus]) (*Attempt, error) {
+func NewAttempt(file string, cache *fileutil.Cache[*ir.DAGRunStatus], opts ...AttemptOption) (*Attempt, error) {
 	dirName := filepath.Base(filepath.Dir(file))
 	attemptID, ok := attemptIDFromDir(dirName)
 	if !ok {
 		return nil, fmt.Errorf("invalid file path for run data: %s", file)
 	}
-	return &Attempt{id: attemptID, file: file, cache: cache}, nil
+	att := &Attempt{id: attemptID, file: file, cache: cache}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(att)
+		}
+	}
+	return att, nil
 }
 
 // Exists returns true if the status file exists.
@@ -212,7 +234,32 @@ func (att *Attempt) Write(ctx context.Context, status ir.DAGRunStatus) error {
 		logger.Warn(ctx, "Failed to update DAG-run latest attempt pointer", tag.Error(err))
 	}
 
+	if err := att.updateArtifactIndex(status); err != nil {
+		logger.Warn(ctx, "Failed to update DAG-run artifact index", tag.Error(err))
+	}
+
 	return nil
+}
+
+// updateArtifactIndex records a finished run in the artifact index.
+//
+// Runs are indexed only once they finish and only when they left something
+// behind, so that a listing never surfaces a directory with nothing in it.
+// Directories written before the date layout have no place in the index and
+// are skipped.
+func (att *Attempt) updateArtifactIndex(status ir.DAGRunStatus) error {
+	if att.artifactRoot == "" || status.ArchiveDir == "" || status.Status.IsActive() {
+		return nil
+	}
+	metaPath, ok := artifactpath.MetaPath(att.artifactRoot, status.ArchiveDir)
+	if !ok {
+		return nil
+	}
+	hasEntries, err := artifact.DirHasEntries(status.ArchiveDir)
+	if err != nil || !hasEntries {
+		return err
+	}
+	return artifact.WriteRecord(metaPath, artifact.RecordFromStatus(status))
 }
 
 // Close properly closes the status file, performs compaction, and invalidates the cache.

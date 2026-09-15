@@ -101,7 +101,7 @@ func (dr DataRoot) latestAttemptFromPointer(ctx context.Context, cache *fileutil
 	if !cutoff.IsZero() && run.timestamp.Before(cutoff.Time) {
 		return nil, errLatestAttemptPointerInvalid
 	}
-	attempt, err := NewAttempt(info.statusFile, cache)
+	attempt, err := NewAttempt(info.statusFile, cache, WithArtifactRoot(dr.artifactDir))
 	if err != nil {
 		return nil, err
 	}

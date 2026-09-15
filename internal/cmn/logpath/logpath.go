@@ -26,7 +26,7 @@ type Config struct {
 // Generate expands the configured log directories, creates the DAG-run log
 // directory if needed, and returns the full log file path.
 func Generate(ctx context.Context, baseLogDir, dagLogDir, dagName, dagRunID string) (string, error) {
-	dir, err := GenerateDir(ctx, baseLogDir, dagLogDir, dagName, dagRunID)
+	dir, err := generateDir(ctx, baseLogDir, dagLogDir, dagName, dagRunID)
 	if err != nil {
 		return "", err
 	}
@@ -39,9 +39,9 @@ func Generate(ctx context.Context, baseLogDir, dagLogDir, dagName, dagRunID stri
 	return filepath.Join(dir, cfg.LogFile()), nil
 }
 
-// GenerateDir expands the configured directories, creates the DAG-run
+// generateDir expands the configured directories, creates the DAG-run
 // directory if needed, and returns the per-run directory path.
-func GenerateDir(ctx context.Context, baseDir, dagDir, dagName, dagRunID string) (string, error) {
+func generateDir(ctx context.Context, baseDir, dagDir, dagName, dagRunID string) (string, error) {
 	resolver := cmnvalue.NewResolver(cmnvalue.StaticScope{}, cmnvalue.RuntimeScope{})
 	baseDir, err := resolver.String(ctx, baseDir, cmnvalue.LogPathField("log.base_dir"))
 	if err != nil {

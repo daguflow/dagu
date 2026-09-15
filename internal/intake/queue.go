@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dagucloud/dagu/v2/internal/cmn/artifactpath"
 	"github.com/dagucloud/dagu/v2/internal/cmn/logger"
 	"github.com/dagucloud/dagu/v2/internal/cmn/logger/tag"
 	"github.com/dagucloud/dagu/v2/internal/cmn/logpath"
@@ -165,7 +166,7 @@ func artifactDir(ctx context.Context, req QueueRequest) (string, error) {
 		return "", nil
 	}
 
-	dir, err := logpath.GenerateDir(ctx, req.ArtifactBaseDir, req.DAG.Artifacts.Dir, req.DAG.Name, req.DAGRunID)
+	dir, err := artifactpath.NewRunDir(ctx, req.ArtifactBaseDir, req.DAG.Artifacts.Dir, req.DAG.Name, req.DAGRunID, time.Now())
 	if err != nil {
 		return "", fmt.Errorf("failed to generate artifact directory: %w", err)
 	}

@@ -69,6 +69,7 @@ func newServer(ctx *Context, rs *resource.Service, stores frontend.Stores, opts 
 		Config:               ctx.Config,
 		DAGRepository:        ctx.Persistence.DAGRepository,
 		DAGRunRepository:     ctx.Persistence.DAGRunRepository,
+		ArtifactRepository:   ctx.Persistence.ArtifactRepository,
 		ProcRepository:       ctx.Persistence.ProcRepository,
 		QueueStore:           ctx.Persistence.QueueStore,
 		DAGRunManager:        ctx.DAGRunMgr,
