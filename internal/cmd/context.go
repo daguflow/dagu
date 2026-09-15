@@ -17,6 +17,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/dagucloud/dagu/v2/internal/cmn/artifactpath"
 	"github.com/dagucloud/dagu/v2/internal/cmn/config"
 	"github.com/dagucloud/dagu/v2/internal/cmn/fileutil"
 	"github.com/dagucloud/dagu/v2/internal/cmn/logger"
@@ -593,7 +594,7 @@ func (c *Context) GenArtifactDir(dag *ir.DAG, dagRunID string) (string, error) {
 		dagArtifactDir = dag.Artifacts.Dir
 	}
 
-	return logpath.GenerateDir(c, c.Config.Paths.ArtifactDir, dagArtifactDir, dag.Name, dagRunID)
+	return artifactpath.NewRunDir(c, c.Config.Paths.ArtifactDir, dagArtifactDir, dag.Name, dagRunID, time.Now())
 }
 
 // NewCommand creates a new command instance with the given cobra command and run function.

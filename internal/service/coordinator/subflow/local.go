@@ -9,11 +9,12 @@ import (
 	"fmt"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/dagucloud/dagu/v2/internal/cmn/runenv"
 
+	"github.com/dagucloud/dagu/v2/internal/cmn/artifactpath"
 	"github.com/dagucloud/dagu/v2/internal/cmn/config"
-	"github.com/dagucloud/dagu/v2/internal/cmn/logpath"
 	"github.com/dagucloud/dagu/v2/internal/dagrun"
 	"github.com/dagucloud/dagu/v2/internal/dispatch"
 	"github.com/dagucloud/dagu/v2/internal/intake"
@@ -696,7 +697,7 @@ func inProcessArtifactDir(ctx context.Context, dag *ir.DAG, baseDir, runID strin
 		dagArtifactDir = dag.Artifacts.Dir
 	}
 
-	dir, err := logpath.GenerateDir(ctx, baseDir, dagArtifactDir, dag.Name, runID)
+	dir, err := artifactpath.NewRunDir(ctx, baseDir, dagArtifactDir, dag.Name, runID, time.Now())
 	if err != nil {
 		return "", fmt.Errorf("failed to generate child workflow artifact directory: %w", err)
 	}

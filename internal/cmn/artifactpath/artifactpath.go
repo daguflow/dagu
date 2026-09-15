@@ -13,7 +13,7 @@ package artifactpath
 
 import (
 	"context"
-	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -47,10 +47,14 @@ type RunDirName struct {
 	Suffix    string
 }
 
-// NewRunDir creates the artifact directory for a run started at the given time
-// and returns its absolute path. overrideDir, when set, replaces baseDir as the
-// root; both are expanded for environment references before use.
-func NewRunDir(ctx context.Context, baseDir, overrideDir, dagName string, at time.Time) (string, error) {
+// RunDir returns the artifact directory for a run without creating it.
+// overrideDir, when set, replaces baseDir as the root; both are expanded for
+// environment references before use.
+//
+// The result is a pure function of its arguments, so any component that has to
+// re-derive a run's directory arrives at the same path rather than minting a
+// second one.
+func RunDir(ctx context.Context, baseDir, overrideDir, dagName, dagRunID string, at time.Time) (string, error) {
 	root, err := resolveRoot(ctx, baseDir, overrideDir)
 	if err != nil {
 		return "", err
@@ -58,13 +62,18 @@ func NewRunDir(ctx context.Context, baseDir, overrideDir, dagName string, at tim
 	if strings.TrimSpace(dagName) == "" {
 		return "", fmt.Errorf("DAG name must not be empty")
 	}
+	if strings.TrimSpace(dagRunID) == "" {
+		return "", fmt.Errorf("DAG-run ID must not be empty")
+	}
+	return filepath.Join(DayDir(root, at), runDirName(at, dagName, dagRunID)), nil
+}
 
-	suffix, err := randomSuffix()
+// NewRunDir returns the artifact directory for a run and creates it.
+func NewRunDir(ctx context.Context, baseDir, overrideDir, dagName, dagRunID string, at time.Time) (string, error) {
+	dir, err := RunDir(ctx, baseDir, overrideDir, dagName, dagRunID, at)
 	if err != nil {
 		return "", err
 	}
-
-	dir := filepath.Join(DayDir(root, at), runDirName(at, dagName, suffix))
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return "", fmt.Errorf("failed to initialize directory %s: %w", dir, err)
 	}
@@ -128,26 +137,45 @@ func ParseRunDirName(name string) (RunDirName, bool) {
 func resolveRoot(ctx context.Context, baseDir, overrideDir string) (string, error) {
 	resolver := cmnvalue.NewResolver(cmnvalue.StaticScope{}, cmnvalue.RuntimeScope{})
 
-	baseDir, err := resolver.String(ctx, baseDir, cmnvalue.CoordinatorArtifactBaseDirField("artifacts.base_dir"))
-	if err != nil {
-		return "", fmt.Errorf("failed to expand base directory: %w", err)
-	}
-	overrideDir, err = resolver.String(ctx, overrideDir, cmnvalue.CoordinatorArtifactBaseDirField("artifacts.dir"))
-	if err != nil {
-		return "", fmt.Errorf("failed to expand DAG artifact directory: %w", err)
+	// An override that expands to nothing is a misconfiguration rather than a
+	// request to fall back to the global root.
+	if strings.TrimSpace(overrideDir) != "" {
+		expanded, err := resolver.String(ctx, overrideDir, cmnvalue.CoordinatorArtifactBaseDirField("artifacts.dir"))
+		if err != nil {
+			return "", fmt.Errorf("expand artifact directory: %w", err)
+		}
+		return trimmedRoot(expanded)
 	}
 
-	if strings.TrimSpace(overrideDir) != "" {
-		return overrideDir, nil
-	}
 	if strings.TrimSpace(baseDir) == "" {
-		return "", fmt.Errorf("artifact directory is not set")
+		return "", fmt.Errorf("artifact directory is not configured")
 	}
-	return baseDir, nil
+	expanded, err := resolver.String(ctx, baseDir, cmnvalue.CoordinatorArtifactBaseDirField("artifacts.base_dir"))
+	if err != nil {
+		return "", fmt.Errorf("expand artifact directory: %w", err)
+	}
+	return trimmedRoot(expanded)
 }
 
-func runDirName(at time.Time, dagName, suffix string) string {
-	return at.UTC().Format(timeOfDayLayout) + "_" + safeDAGName(dagName) + "_" + suffix
+func trimmedRoot(dir string) (string, error) {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return "", fmt.Errorf("artifact directory is empty after expansion")
+	}
+	return dir, nil
+}
+
+func runDirName(at time.Time, dagName, dagRunID string) string {
+	return at.UTC().Format(timeOfDayLayout) + "_" + safeDAGName(dagName) + "_" + runSuffix(dagRunID)
+}
+
+// runSuffix separates two runs of the same DAG started in the same second. It
+// is derived from the run ID rather than drawn at random so that the directory
+// can be recomputed, not just remembered. The run ID itself stays out of the
+// path to leave room for user-authored artifact paths beneath it.
+func runSuffix(dagRunID string) string {
+	sum := sha256.Sum256([]byte(dagRunID))
+	return hex.EncodeToString(sum[:])[:suffixLen]
 }
 
 // safeDAGName reduces a DAG name to characters that are safe in a path segment
@@ -177,14 +205,6 @@ func safeDAGName(name string) string {
 		safe = "dag"
 	}
 	return safe
-}
-
-func randomSuffix() (string, error) {
-	b := make([]byte, suffixLen/2)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("failed to read random bytes: %w", err)
-	}
-	return hex.EncodeToString(b), nil
 }
 
 func isDigits(s string) bool {

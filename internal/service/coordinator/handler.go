@@ -18,12 +18,12 @@ import (
 	"time"
 
 	"github.com/dagucloud/dagu/v2/internal/agentsession"
+	"github.com/dagucloud/dagu/v2/internal/cmn/artifactpath"
 	"github.com/dagucloud/dagu/v2/internal/cmn/dirlock"
 	"github.com/dagucloud/dagu/v2/internal/cmn/fileutil"
 	"github.com/dagucloud/dagu/v2/internal/cmn/logger"
 	"github.com/dagucloud/dagu/v2/internal/cmn/logger/tag"
 	"github.com/dagucloud/dagu/v2/internal/cmn/stringutil"
-	cmnvalue "github.com/dagucloud/dagu/v2/internal/cmn/value"
 	"github.com/dagucloud/dagu/v2/internal/dagrun"
 	"github.com/dagucloud/dagu/v2/internal/dispatch"
 	"github.com/dagucloud/dagu/v2/internal/eventstore"
@@ -2358,34 +2358,18 @@ func (h *Handler) transformArtifactPaths(
 			return fmt.Errorf("read DAG for artifact path: DAG is nil")
 		}
 
-		baseDir := h.artifactDir
-		if dag.Artifacts != nil && dag.Artifacts.Dir != "" {
-			baseDir = dag.Artifacts.Dir
+		overrideDir := ""
+		if dag.Artifacts != nil {
+			overrideDir = dag.Artifacts.Dir
 		}
-		baseDir = strings.TrimSpace(baseDir)
-		if baseDir == "" {
-			return fmt.Errorf("artifact directory is not configured")
-		}
-		resolver := cmnvalue.NewResolver(cmnvalue.StaticScope{}, cmnvalue.RuntimeScope{})
-		baseDir, err = resolver.String(ctx, baseDir, cmnvalue.CoordinatorArtifactBaseDirField("artifacts.dir"))
+
+		// The worker directory is throwaway staging, so a fresh coordinator
+		// path is assigned rather than mirroring the reported name.
+		artifactDir, err := artifactpath.NewRunDir(ctx, h.artifactDir, overrideDir, dag.Name, incoming.DAGRunID, artifactRunTime(incoming))
 		if err != nil {
-			return fmt.Errorf("expand artifact directory: %w", err)
+			return fmt.Errorf("resolve artifact directory: %w", err)
 		}
-		baseDir = strings.TrimSpace(baseDir)
-		if baseDir == "" {
-			return fmt.Errorf("artifact directory is empty after expansion")
-		}
-
-		archiveName := filepath.Base(filepath.Clean(incoming.ArchiveDir))
-		if archiveName == "." || archiveName == string(filepath.Separator) || archiveName == "" {
-			return fmt.Errorf("invalid artifact directory %q", incoming.ArchiveDir)
-		}
-
-		incoming.ArchiveDir = filepath.Join(
-			baseDir,
-			fileutil.SafeName(dag.Name),
-			archiveName,
-		)
+		incoming.ArchiveDir = artifactDir
 	}
 	if incoming.ArchiveDir == "" {
 		return nil
@@ -2394,6 +2378,15 @@ func (h *Handler) transformArtifactPaths(
 		return fmt.Errorf("create artifact directory: %w", err)
 	}
 	return nil
+}
+
+// artifactRunTime reports the time that places a run in the artifact date
+// tree, falling back to now when the reported start time is unusable.
+func artifactRunTime(status *ir.DAGRunStatus) time.Time {
+	if startedAt, err := stringutil.ParseTime(status.StartedAt); err == nil && !startedAt.IsZero() {
+		return startedAt
+	}
+	return time.Now()
 }
 
 // persistChatMessages writes chat messages from status to the attempt.

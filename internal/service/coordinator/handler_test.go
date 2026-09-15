@@ -21,7 +21,8 @@ import (
 	"github.com/dagucloud/dagu/v2/internal/executor/registry"
 	"github.com/dagucloud/dagu/v2/internal/testutil"
 
-	"github.com/dagucloud/dagu/v2/internal/cmn/fileutil"
+	"github.com/dagucloud/dagu/v2/internal/cmn/artifactpath"
+	"github.com/dagucloud/dagu/v2/internal/cmn/stringutil"
 	"github.com/dagucloud/dagu/v2/internal/ir"
 	"github.com/dagucloud/dagu/v2/internal/persis"
 	persistestutil "github.com/dagucloud/dagu/v2/internal/persis/testutil"
@@ -539,6 +540,8 @@ func (m *mockAttempt) GetStepMessages(stepName string) []ir.LLMMessage {
 	return m.stepMessages[stepName]
 }
 
+var artifactTestStart = time.Date(2026, 4, 12, 0, 0, 0, 0, time.UTC)
+
 func TestTransformArtifactPathsCreatesDirectory(t *testing.T) {
 	t.Parallel()
 
@@ -554,12 +557,15 @@ func TestTransformArtifactPathsCreatesDirectory(t *testing.T) {
 	}
 	incoming := &ir.DAGRunStatus{
 		DAGRunID:   "run-123",
-		ArchiveDir: "/tmp/worker/dag-run_20260412_000000Z_run-123",
+		StartedAt:  stringutil.FormatTime(artifactTestStart),
+		ArchiveDir: "/tmp/worker/staging",
 	}
 
 	err := handler.transformArtifactPaths(context.Background(), attempt, nil, incoming)
 	require.NoError(t, err)
-	assert.Equal(t, filepath.Join(baseDir, "test-dag", "dag-run_20260412_000000Z_run-123"), incoming.ArchiveDir)
+	expected, err := artifactpath.RunDir(context.Background(), baseDir, "", "test-dag", "run-123", artifactTestStart)
+	require.NoError(t, err)
+	assert.Equal(t, expected, incoming.ArchiveDir)
 
 	info, statErr := os.Stat(incoming.ArchiveDir)
 	require.NoError(t, statErr)
@@ -581,13 +587,16 @@ func TestTransformArtifactPathsSanitizesDAGName(t *testing.T) {
 	}
 	incoming := &ir.DAGRunStatus{
 		DAGRunID:   "run-123",
-		ArchiveDir: "/tmp/worker/dag-run_20260412_000000Z_run-123",
+		StartedAt:  stringutil.FormatTime(artifactTestStart),
+		ArchiveDir: "/tmp/worker/staging",
 	}
 
 	err := handler.transformArtifactPaths(context.Background(), attempt, nil, incoming)
 	require.NoError(t, err)
 
-	expected := filepath.Join(baseDir, fileutil.SafeName(attempt.dag.Name), "dag-run_20260412_000000Z_run-123")
+	expected, expectedErr := artifactpath.RunDir(
+		context.Background(), baseDir, "", attempt.dag.Name, "run-123", artifactTestStart)
+	require.NoError(t, expectedErr)
 	assert.Equal(t, expected, incoming.ArchiveDir)
 
 	info, statErr := os.Stat(incoming.ArchiveDir)
@@ -628,11 +637,12 @@ func TestTransformArtifactPathsRejectsEmptyExpandedBaseDir(t *testing.T) {
 	}
 	incoming := &ir.DAGRunStatus{
 		DAGRunID:   "run-123",
-		ArchiveDir: "/tmp/worker/dag-run_20260412_000000Z_run-123",
+		StartedAt:  stringutil.FormatTime(artifactTestStart),
+		ArchiveDir: "/tmp/worker/staging",
 	}
 
 	err := handler.transformArtifactPaths(context.Background(), attempt, nil, incoming)
-	require.EqualError(t, err, "artifact directory is empty after expansion")
+	require.ErrorContains(t, err, "artifact directory is empty after expansion")
 }
 
 func TestTransformArtifactPathsUsesDAGSpecificDirWithoutGlobalArtifactDir(t *testing.T) {
@@ -651,12 +661,15 @@ func TestTransformArtifactPathsUsesDAGSpecificDirWithoutGlobalArtifactDir(t *tes
 	}
 	incoming := &ir.DAGRunStatus{
 		DAGRunID:   "run-123",
-		ArchiveDir: "/tmp/worker/dag-run_20260412_000000Z_run-123",
+		StartedAt:  stringutil.FormatTime(artifactTestStart),
+		ArchiveDir: "/tmp/worker/staging",
 	}
 
 	err := handler.transformArtifactPaths(context.Background(), attempt, nil, incoming)
 	require.NoError(t, err)
-	assert.Equal(t, filepath.Join(baseDir, "test-dag", "dag-run_20260412_000000Z_run-123"), incoming.ArchiveDir)
+	expected, err := artifactpath.RunDir(context.Background(), baseDir, "", "test-dag", "run-123", artifactTestStart)
+	require.NoError(t, err)
+	assert.Equal(t, expected, incoming.ArchiveDir)
 }
 
 func TestCreateAttemptForTaskCarriesDAGLabels(t *testing.T) {

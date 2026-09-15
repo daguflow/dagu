@@ -23,7 +23,7 @@ func TestNewRunDir(t *testing.T) {
 		t.Parallel()
 		base := t.TempDir()
 
-		dir, err := artifactpath.NewRunDir(context.Background(), base, "", "daily-report", testTime)
+		dir, err := artifactpath.NewRunDir(context.Background(), base, "", "daily-report", "run-1", testTime)
 		require.NoError(t, err)
 		require.DirExists(t, dir)
 
@@ -46,7 +46,7 @@ func TestNewRunDir(t *testing.T) {
 		jst := time.FixedZone("JST", 9*60*60)
 		at := time.Date(2026, 9, 16, 9, 5, 0, 0, jst)
 
-		dir, err := artifactpath.NewRunDir(context.Background(), base, "", "tz", at)
+		dir, err := artifactpath.NewRunDir(context.Background(), base, "", "tz", "run-1", at)
 		require.NoError(t, err)
 		assert.Equal(t, artifactpath.DayDir(base, at), filepath.Dir(dir))
 		assert.Equal(t, filepath.Join(base, "2026", "09", "16"), filepath.Dir(dir))
@@ -57,7 +57,7 @@ func TestNewRunDir(t *testing.T) {
 		base := t.TempDir()
 		override := t.TempDir()
 
-		dir, err := artifactpath.NewRunDir(context.Background(), base, override, "scoped", testTime)
+		dir, err := artifactpath.NewRunDir(context.Background(), base, override, "scoped", "run-1", testTime)
 		require.NoError(t, err)
 		require.DirExists(t, dir)
 
@@ -66,31 +66,73 @@ func TestNewRunDir(t *testing.T) {
 		assert.Equal(t, filepath.Join("2026", "09", "15"), filepath.Dir(rel))
 	})
 
-	t.Run("SuffixDisambiguatesSameSecond", func(t *testing.T) {
+	// Re-deriving a run's directory must land on the same path, so that a
+	// component which lost the recorded value cannot mint a second directory.
+	t.Run("SameRunResolvesToSamePath", func(t *testing.T) {
 		t.Parallel()
 		base := t.TempDir()
 
-		first, err := artifactpath.NewRunDir(context.Background(), base, "", "same", testTime)
+		first, err := artifactpath.NewRunDir(context.Background(), base, "", "same", "run-1", testTime)
 		require.NoError(t, err)
-		second, err := artifactpath.NewRunDir(context.Background(), base, "", "same", testTime)
+		second, err := artifactpath.NewRunDir(context.Background(), base, "", "same", "run-1", testTime)
+		require.NoError(t, err)
+
+		assert.Equal(t, first, second)
+	})
+
+	t.Run("DistinctRunsInSameSecondDiffer", func(t *testing.T) {
+		t.Parallel()
+		base := t.TempDir()
+
+		first, err := artifactpath.NewRunDir(context.Background(), base, "", "same", "run-1", testTime)
+		require.NoError(t, err)
+		second, err := artifactpath.NewRunDir(context.Background(), base, "", "same", "run-2", testTime)
 		require.NoError(t, err)
 
 		assert.NotEqual(t, first, second)
 	})
 
+	t.Run("RejectsEmptyRunID", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := artifactpath.NewRunDir(context.Background(), t.TempDir(), "", "dag", " ", testTime)
+		require.Error(t, err)
+	})
+
+	// RunDir is the pure form used where a path must be derived without
+	// creating anything.
+	t.Run("RunDirDoesNotCreate", func(t *testing.T) {
+		t.Parallel()
+		base := t.TempDir()
+
+		dir, err := artifactpath.RunDir(context.Background(), base, "", "dry", "run-1", testTime)
+		require.NoError(t, err)
+		assert.NoDirExists(t, dir)
+	})
+
 	t.Run("RejectsMissingRoot", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := artifactpath.NewRunDir(context.Background(), "", "", "orphan", testTime)
-		require.Error(t, err)
+		_, err := artifactpath.NewRunDir(context.Background(), "", "", "orphan", "run-1", testTime)
+		require.EqualError(t, err, "artifact directory is not configured")
 	})
 
 	t.Run("RejectsEmptyDAGName", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := artifactpath.NewRunDir(context.Background(), t.TempDir(), "", "  ", testTime)
+		_, err := artifactpath.NewRunDir(context.Background(), t.TempDir(), "", "  ", "run-1", testTime)
 		require.Error(t, err)
 	})
+}
+
+// An override that expands to nothing must not silently fall back to the global
+// root, which would scatter a DAG's artifacts across two trees.
+func TestNewRunDirRejectsOverrideExpandingToEmpty(t *testing.T) {
+	t.Setenv("EMPTY_ARTIFACT_DIR", "")
+
+	_, err := artifactpath.NewRunDir(
+		context.Background(), t.TempDir(), "${EMPTY_ARTIFACT_DIR}", "scoped", "run-1", testTime)
+	require.EqualError(t, err, "artifact directory is empty after expansion")
 }
 
 // MetaPath must stay in the global tree so one date walk sees every run, even
@@ -102,7 +144,7 @@ func TestMetaPath(t *testing.T) {
 		t.Parallel()
 		base := t.TempDir()
 
-		dir, err := artifactpath.NewRunDir(context.Background(), base, "", "report", testTime)
+		dir, err := artifactpath.NewRunDir(context.Background(), base, "", "report", "run-1", testTime)
 		require.NoError(t, err)
 
 		meta := artifactpath.MetaPath(base, dir, testTime)
@@ -115,7 +157,7 @@ func TestMetaPath(t *testing.T) {
 		base := t.TempDir()
 		override := t.TempDir()
 
-		dir, err := artifactpath.NewRunDir(context.Background(), base, override, "report", testTime)
+		dir, err := artifactpath.NewRunDir(context.Background(), base, override, "report", "run-1", testTime)
 		require.NoError(t, err)
 
 		meta := artifactpath.MetaPath(base, dir, testTime)
@@ -167,7 +209,7 @@ func TestParseRunDirName(t *testing.T) {
 		t.Parallel()
 		base := t.TempDir()
 
-		dir, err := artifactpath.NewRunDir(context.Background(), base, "", "spaced name/slash", testTime)
+		dir, err := artifactpath.NewRunDir(context.Background(), base, "", "spaced name/slash", "run-1", testTime)
 		require.NoError(t, err)
 		require.DirExists(t, dir)
 

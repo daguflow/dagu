@@ -696,7 +696,7 @@ steps:
 		require.Equal(t, ir.Succeeded, status.Status)
 		require.NotEmpty(t, status.ArchiveDir)
 		require.DirExists(t, status.ArchiveDir)
-		assert.True(t, strings.HasPrefix(status.ArchiveDir, filepath.Join(f.artifactDir(), f.dagWrapper.Name)+string(os.PathSeparator)))
+		assertArtifactDirInTree(t, f, status.ArchiveDir)
 		assertArtifactContains(t, status.ArchiveDir, "reports/summary.md", "artifact from worker")
 	})
 
@@ -723,7 +723,7 @@ steps:
 		require.Equal(t, ir.Failed, status.Status)
 		require.NotEmpty(t, status.ArchiveDir)
 		require.DirExists(t, status.ArchiveDir)
-		assert.True(t, strings.HasPrefix(status.ArchiveDir, filepath.Join(f.artifactDir(), f.dagWrapper.Name)+string(os.PathSeparator)))
+		assertArtifactDirInTree(t, f, status.ArchiveDir)
 		assertArtifactContains(t, status.ArchiveDir, "reports/summary.md", "artifact from failed worker")
 	})
 
@@ -750,8 +750,10 @@ steps:
 		require.Equal(t, ir.Succeeded, status.Status)
 		require.NotEmpty(t, status.ArchiveDir)
 		require.DirExists(t, status.ArchiveDir)
-		assert.True(t, strings.HasPrefix(status.ArchiveDir, filepath.Join(f.artifactDir(), f.dagWrapper.Name)+string(os.PathSeparator)))
+		assertArtifactDirInTree(t, f, status.ArchiveDir)
 
+		// Also guards that per-run metadata is a sibling of the artifact
+		// directory, never a child, where a step could overwrite it.
 		entries, err := os.ReadDir(status.ArchiveDir)
 		require.NoError(t, err)
 		assert.Empty(t, entries)
