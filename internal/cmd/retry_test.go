@@ -184,7 +184,9 @@ steps:
 		require.Equal(t, ir.TriggerTypeRetry, latestStatus.TriggerType)
 	})
 
-	t.Run("QueuedRetryDoesNotWaitForTerminalSourceProc", func(t *testing.T) {
+	// A queued retry gives the previous execution a moment to release the run,
+	// then enqueues whether or not it has.
+	t.Run("QueuedRetryProceedsWhileSourceProcHoldsRun", func(t *testing.T) {
 		const dagName = "queued-retry-live-source-dag"
 		th := test.SetupCommand(t, test.WithConfigMutator(func(cfg *config.Config) {
 			cfg.Queues = config.Queues{

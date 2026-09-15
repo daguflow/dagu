@@ -512,6 +512,7 @@ func newQueueDispatchNotQueuedError(status *ir.DAGRunStatus) *queue.DAGRunNotQue
 func enqueueRetry(ctx *Context, dag *ir.DAG, status *ir.DAGRunStatus, triggerActor string) error {
 	if _, err := queue.EnqueueRetry(ctx.Context, ctx.Persistence.DAGRunRepository, ctx.Persistence.QueueStore, dag, status, queue.EnqueueRetryOptions{
 		TriggerActor: &triggerActor,
+		Processes:    ctx.Persistence.ProcRepository,
 	}); err != nil {
 		if errors.Is(err, queue.ErrRetryStaleLatest) {
 			return fmt.Errorf("dag-run state changed before retry could be queued")

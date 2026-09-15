@@ -1100,6 +1100,19 @@ func (d *queueDispatcher) failQueuedRunBeforeStartup(
 		attemptID = attempt.ID()
 	}
 
+	// A retry enqueued while this dispatch was finishing owns the run's queued
+	// state now. Failing the run here would return it to a finished status and
+	// strand that item, so only this dispatch's own item is discarded.
+	requeued, err := d.requeuedApartFrom(ctx, queueName, runRef, itemID)
+	if err != nil {
+		logger.Warn(ctx, "Failed to check whether the dag-run was queued again", tag.Error(err))
+	} else if requeued {
+		if _, err := d.queueStore.DeleteByItemIDs(ctx, queueName, []string{itemID}); err != nil {
+			return fmt.Errorf("delete superseded DAG run queue item: %w", err)
+		}
+		return nil
+	}
+
 	finishedAt := stringutil.FormatTime(time.Now().UTC())
 	currentStatus, swapped, err := d.dagRunRepository.CompareAndSwapLatestAttemptStatus(
 		ctx,
@@ -1128,6 +1141,27 @@ func (d *queueDispatcher) failQueuedRunBeforeStartup(
 		return fmt.Errorf("delete failed DAG run queue item: %w", err)
 	}
 	return nil
+}
+
+// requeuedApartFrom reports another queue item waiting for the same dag-run.
+func (d *queueDispatcher) requeuedApartFrom(ctx context.Context, queueName string, runRef ir.DAGRunRef, itemID string) (bool, error) {
+	items, err := d.queueStore.ListByDAGName(ctx, queueName, runRef.Name)
+	if err != nil {
+		return false, err
+	}
+	for _, item := range items {
+		if item.ID() == itemID {
+			continue
+		}
+		data, err := item.Data()
+		if err != nil || data == nil {
+			continue
+		}
+		if data.ID == runRef.ID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func shouldRecordStartupCondition(err error) bool {

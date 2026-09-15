@@ -542,7 +542,7 @@ func (f *fixture) RetryEnqueue(runID string) *fixture {
 		f.th.QueueStore,
 		f.dag,
 		f.MustStatus(runID),
-		queue.EnqueueRetryOptions{},
+		queue.EnqueueRetryOptions{Processes: f.th.ProcRepository},
 	)
 	require.NoError(f.t, err)
 	return f
